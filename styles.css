@@ -55,6 +55,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
 @keyframes pulse{50%{opacity:.55}}
 #toast{position:absolute;bottom:32%;width:100%;text-align:center;font-size:15px;font-style:italic;color:var(--bone);
   text-shadow:0 1px 4px #000}
+#fs-btn{position:absolute;top:calc(10px + env(safe-area-inset-top));right:12px;pointer-events:auto;
+  width:38px;height:38px;border-radius:4px;background:var(--panel);border:1px solid #5c0a10;
+  color:var(--bone);font-size:17px;cursor:pointer}
 /* dialogue */
 #dlg{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(90px + env(safe-area-inset-bottom));
   width:min(640px,92vw);z-index:30;background:var(--panel);border:1px solid #5c0a10;border-top:2px solid var(--blood);

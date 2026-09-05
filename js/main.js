@@ -302,7 +302,22 @@ document.getElementById('btn-jump').addEventListener('click', function(){ player
 
 // ---------- loop ----------
 var started = false, clock = new THREE.Clock();
-window.addEventListener('dragon:begin', function(){ started = true; initAudio(); clock.getDelta(); });
+function goFullscreen(){
+  try {
+    var el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen().catch(function(){});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  } catch(e){}
+}
+document.getElementById('fs-btn').addEventListener('click', function(){
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    try {
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } catch(e){}
+  } else goFullscreen();
+});
+window.addEventListener('dragon:begin', function(){ started = true; initAudio(); goFullscreen(); clock.getDelta(); });
 window.addEventListener('resize', function(){
   camera.aspect = window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();

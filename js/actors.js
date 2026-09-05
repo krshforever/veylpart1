@@ -15,28 +15,63 @@ function box(w,h,d,m,x,y,z){
   o.position.set(x||0, y||0, z||0); return o;
 }
 
-/* ---------- NPC builder: robed figure, color-coded ---------- */
+/* ---------- NPCs: real Sketchfab bodies (CC-BY, credited) + role props ---------- */
+var NPC_MODELS = {
+  dren:  { url: 'models/guard/scene.gltf', h: 1.95 },    // Castle Guard, rigged+anim
+  sella: { url: 'models/peasant/scene.gltf', h: 1.7, pick: 1 },  // peasant variants
+  issa:  { url: 'models/peasant/scene.gltf', h: 1.8, pick: 2 }
+};
 function buildNPC(opts){
   var g = new THREE.Group();
-  var robe = mat(opts.robe), trim = mat(opts.trim, opts.glowTrim ? opts.trim : 0);
-  var robeM = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.62, 1.7, 8), robe);
-  robeM.position.y = 0.85; g.add(robeM);
-  var chest = box(0.7, 0.5, 0.5, robe, 0, 1.55, 0); g.add(chest);
-  var head = box(0.36, 0.4, 0.38, mat(0xd8cbaa), 0, 2.0, 0); g.add(head);
-  var hood = box(0.5, 0.28, 0.52, trim, 0, 2.28, -0.04); g.add(hood);
-  var eye = box(0.3, 0.06, 0.04, mat(0xff7b14, 0xff7b14), 0, 2.0, 0.2); g.add(eye);
-  if (opts.spear) { // Dren's gate-spear
-    var sp = box(0.09, 3.0, 0.09, mat(0x3a2a1a), 0.55, 1.5, 0); g.add(sp);
-    g.add(box(0.22, 0.5, 0.08, mat(0xb9c2cc), 0.55, 3.1, 0));
-  }
-  if (opts.staff) { // Issa's brand-staff
-    var st = box(0.1, 2.6, 0.1, mat(0x3a2a1a), 0.55, 1.3, 0); g.add(st);
-    var orb = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), mat(0xff7b14, 0xff7b14));
-    orb.position.set(0.55, 2.75, 0); g.add(orb); g.userData.orb = orb;
-  }
   g.position.set(opts.pos[0], V.groundY(opts.pos[0], opts.pos[2]), opts.pos[2]);
   V.scene.add(g);
-  return { obj: g, baseY: g.position.y, seed: Math.random()*10, npc: opts };
+  var rec = { obj: g, baseY: g.position.y, seed: Math.random()*10, npc: opts,
+              mixer: null, model: null };
+  var spec = NPC_MODELS[opts.id];
+  if (spec) {
+    new THREE.GLTFLoader().load(spec.url, function(r){
+      var model = r.scene;
+      // normalize: feet on ground, facing +Z, target height
+      var bb = new THREE.Box3().setFromObject(model);
+      var size = new THREE.Vector3(); bb.getSize(size);
+      // peasant pack holds a family: isolate one variant by index
+      if (spec.pick !== undefined) {
+        var kids = model.children.slice();
+        kids.forEach(function(k, i){ if (i !== spec.pick) model.remove(k); });
+        bb.setFromObject(model); bb.getSize(size);
+      }
+      var s = spec.h / (size.y || 1);
+      model.scale.setScalar(s);
+      bb.setFromObject(model);
+      model.position.sub(new THREE.Vector3((bb.min.x+bb.max.x)/2, bb.min.y, (bb.min.z+bb.max.z)/2));
+      g.add(model);
+      rec.model = model;
+      if (r.animations && r.animations.length) {
+        rec.mixer = new THREE.AnimationMixer(model);
+        rec.mixer.clipAction(r.animations[0]).play();
+      }
+      addProps(g, opts, spec.h);
+    }, undefined, function(){ addProps(g, opts, 1.8); });
+  } else addProps(g, opts, 1.8);
+  return rec;
+}
+function addProps(g, opts, h){
+  if (opts.spear) { // Dren's gate-spear
+    g.add(box(0.09, 3.0, 0.09, mat(0x3a2a1a), 0.62, 1.5, 0));
+    g.add(box(0.22, 0.5, 0.08, mat(0xb9c2cc), 0.62, 3.1, 0));
+  }
+  if (opts.staff) { // Issa's brand-staff
+    g.add(box(0.1, 2.6, 0.1, mat(0x3a2a1a), 0.62, 1.3, 0));
+    var orb = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), mat(0xff7b14, 0xff7b14));
+    orb.position.set(0.62, 2.75, 0); g.add(orb); g.userData.orb = orb;
+  }
+  if (opts.id === 'sella') { // merchant lantern + shawl
+    g.add(box(0.7, 0.25, 0.5, mat(0x4a1a2a), 0, h+0.15, 0));
+    var l = box(0.3, 0.4, 0.3, mat(0xff7b14, 0xff7b14), 0.55, 1.2, 0.2); g.add(l);
+  }
+  if (opts.id === 'issa') { // dark hood
+    g.add(box(0.52, 0.3, 0.54, mat(0x1a1a22), 0, h+0.05, -0.03));
+  }
 }
 
 /* ---------- drone builder: hive chitin + wings ---------- */
@@ -238,7 +273,8 @@ function loop(){
   var kp = V.kaelPos, t = now/1000;
 
   npcs.forEach(function(n){
-    n.obj.position.y = n.baseY + Math.sin(t*1.4 + n.seed)*0.05;   // idle breath
+    if (n.mixer) n.mixer.update(dt);                              // rigged idle
+    else n.obj.position.y = n.baseY + Math.sin(t*1.4 + n.seed)*0.05; // fallback breath
     // face Kael when near
     var dx = kp.x - n.obj.position.x, dz = kp.z - n.obj.position.z;
     if (dx*dx + dz*dz < 64) n.obj.rotation.y = Math.atan2(dx, dz);
