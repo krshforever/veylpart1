@@ -1,0 +1,4 @@
+Ambience: "dark-basement" by John Bartmann
+Source: Wikimedia Commons — CC BY (public-domain-adjacent free music project)
+https://commons.wikimedia.org/wiki/File:John_Bartmann_-_dark-basement-master.ogg
+SFX: synthesized in-game via WebAudio (original, LGCY Studios).

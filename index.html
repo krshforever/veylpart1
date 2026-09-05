@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<title>VEYL — Blood of the Serpent Kings</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- boot overlay: owned by zero-dep inline script, never hangs -->
+<div id="boot">
+  <div class="boot-inner">
+    <div class="boot-kicker">LGCY STUDIOS PRESENTS</div>
+    <h1>VEYL<br><span>BLOOD OF THE SERPENT KINGS</span></h1>
+    <p class="boot-sub">The ring fractures. The canals run black. Come home, knight.</p>
+    <button id="begin">⚔ &nbsp;ENTER THE CAPITAL&nbsp; ⚔</button>
+    <div id="loadmsg">loading…</div>
+  </div>
+</div>
+<div id="err"></div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="objective"><span class="obj-tag">OBJECTIVE</span><span id="obj-text"></span></div>
+  <div id="act-banner" class="hidden"><div id="act-title"></div><div id="act-sub"></div></div>
+  <div id="hp-wrap"><div id="hp-label">KAEL</div><div id="hp-bar"><div id="hp-fill"></div></div></div>
+  <div id="boss-wrap" class="hidden"><div id="boss-label">THE BLEEDING SERPENT</div><div id="boss-bar"><div id="boss-fill"></div></div></div>
+  <div id="interact" class="hidden">E — Speak</div>
+  <div id="toast" class="hidden"></div>
+</div>
+
+<!-- dialogue -->
+<div id="dlg" class="hidden">
+  <div id="dlg-name"></div>
+  <div id="dlg-text"></div>
+  <div id="dlg-hint">tap / E to continue ▸</div>
+  <div id="dlg-choices" class="hidden"></div>
+</div>
+
+<!-- portrait gate: VEYL is a landscape game -->
+<div id="rotate"><div>⟳<br>ROTATE YOUR PHONE<br><span>VEYL is played in landscape</span></div></div>
+
+<!-- touch controls -->
+<div id="touch" class="hidden">
+  <div id="stick"><div id="nub"></div></div>
+  <div id="btns"><button id="btn-act">E</button><button id="btn-atk">⚔</button></div>
+</div>
+
+<script>
+/* boot owner: instant response, game talks via CustomEvents */
+(function(){
+  var err = document.getElementById('err'), msg = document.getElementById('loadmsg');
+  function show(t){ err.style.display='block'; err.textContent += '\n'+t; }
+  window.addEventListener('error', function(e){ show('ERR: '+(e.message||'unknown')); });
+  window.addEventListener('unhandledrejection', function(e){ show('REJECT: '+String(e.reason).slice(0,300)); });
+  window.addEventListener('dragon:progress', function(e){ msg.textContent = e.detail; });
+  window.addEventListener('dragon:ready', function(){ msg.textContent = 'ready.'; });
+  document.getElementById('begin').addEventListener('click', function(){
+    document.getElementById('boot').style.display='none';
+    document.getElementById('hud').classList.remove('hidden');
+    if ('ontouchstart' in window) document.getElementById('touch').classList.remove('hidden');
+    window.dispatchEvent(new CustomEvent('dragon:begin'));
+  });
+})();
+</script>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/GLTFLoader.js"></script>
+<script src="js/story.js"></script>
+<script src="js/kael.js"></script>
+<script src="js/main.js"></script>
+<script src="js/actors.js"></script>
+</body>
+</html>
