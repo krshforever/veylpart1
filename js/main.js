@@ -41,7 +41,7 @@ var ember = new THREE.PointLight(0xff5a14, 1.1, 260, 2);
 ember.position.set(0, 40, 40); scene.add(ember);
 
 var camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.5, 2500);
-var yaw = Math.PI, pitch = 0.12, CAMD = 9;   // orbit behind Kael
+var yaw = 0, pitch = 0.12, CAMD = 9;   // orbit behind Kael (0 = looking north, Kael's facing)
 var camPos = new THREE.Vector3(0, 14, 200), camDist = CAMD, camFov = 62;
 // dust pool (billboard sprites)
 var dustTex = (function(){
@@ -438,10 +438,11 @@ function solidSet(){
   return texMesh ? [texMesh] : (world ? [world] : []);
 }
 function sampleGround(x, z){
-  // raycast solid mesh every 4th frame; zone heights as instant fallback
+  // raycast solid mesh (every 2nd frame; 4th when thermally throttled); zones as fallback
   rayFrame++;
+  var every = (typeof perfQ !== 'undefined' && perfQ.level >= 1) ? 4 : 2;
   var set = solidSet();
-  if (set.length && rayFrame % 4 === 0) {
+  if (set.length && rayFrame % every === 0) {
     rayc.set(new THREE.Vector3(x, kaelPos.y + 6, z), rayDir);
     rayc.far = 60;
     var hits = rayc.intersectObjects(set, false);
@@ -660,10 +661,16 @@ function tick(){
     window.KAEL.animate(K, amt, dt, atk, !player.grounded);
     // camera rig: damped follow + shoulder offset + look-ahead + collision + FOV kick
     var fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-    var vx = (kaelPos.x - (tick._px === undefined ? kaelPos.x : tick._px))/Math.max(dt, 0.001);
-    var vz = (kaelPos.z - (tick._pz === undefined ? kaelPos.z : tick._pz))/Math.max(dt, 0.001);
+    // smoothed look-ahead: raw per-frame deltas jitter (esp. throttled), so ease them
+    var rvx = (kaelPos.x - (tick._px === undefined ? kaelPos.x : tick._px))/Math.max(dt, 0.001);
+    var rvz = (kaelPos.z - (tick._pz === undefined ? kaelPos.z : tick._pz))/Math.max(dt, 0.001);
     tick._px = kaelPos.x; tick._pz = kaelPos.z;
-    var tx = kaelPos.x + vx*0.18, ty = kaelPos.y + 2.6, tz = kaelPos.z + vz*0.18;  // velocity look-ahead
+    tick._lvx = (tick._lvx || 0) + (rvx - (tick._lvx || 0)) * Math.min(1, dt*4);
+    tick._lvz = (tick._lvz || 0) + (rvz - (tick._lvz || 0)) * Math.min(1, dt*4);
+    var la = Math.hypot(tick._lvx, tick._lvz);
+    var lax = 0, laz = 0;
+    if (la > 0.8) { lax = tick._lvx/la*Math.min(la*0.14, 1.6); laz = tick._lvz/la*Math.min(la*0.14, 1.6); }
+    var tx = kaelPos.x + lax, ty = kaelPos.y + 2.6, tz = kaelPos.z + laz;
     tx += Math.cos(yaw)*0.9; tz += -Math.sin(yaw)*0.9;       // shoulder offset
     var dx = -fx*Math.cos(pitch), dz = -fz*Math.cos(pitch), dy = -Math.sin(pitch);
     var dl = Math.hypot(dx, dy, dz); dx/=dl; dy/=dl; dz/=dl;

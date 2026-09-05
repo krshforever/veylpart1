@@ -101,6 +101,16 @@ function buildKnight(){
 
 function animate(K, moveAmt, dt, attacking, airborne){
   if (K.mixer) K.mixer.update(dt);
+  // Kael's idle carries root-motion droop that buries him waist-deep:
+  // pin hips+spine to bind positions every frame (limbs keep acting).
+  var B0 = K.bones || {};
+  ['hips_01', 'spine_012'].forEach(function(nm){
+    var b = B0[nm];
+    if (b) {
+      if (!b.userData.px) { b.userData.px = b.position.x; b.userData.py = b.position.y; b.userData.pz = b.position.z; }
+      else b.position.set(b.userData.px, b.userData.py, b.userData.pz);
+    }
+  });
   // smoothed locomotion amount (no snapping between idle/run)
   K.smooth = (K.smooth === undefined ? moveAmt : K.smooth + (moveAmt - K.smooth) * Math.min(1, dt*7));
   var sm = K.smooth;
