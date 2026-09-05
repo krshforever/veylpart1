@@ -91,6 +91,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
 #dlg-choices button{flex:1;background:#2a0306;border:1px solid var(--blood);color:var(--bone);
   font-family:inherit;font-size:14px;padding:10px;cursor:pointer;border-radius:3px}
 #dlg-choices button:active{background:#5c0a10}
+#dlg-skip{color:var(--gold);cursor:pointer;pointer-events:auto}
+#vignette{position:fixed;inset:0;z-index:15;pointer-events:none;opacity:0;
+  background:radial-gradient(ellipse at center,transparent 52%,rgba(160,8,12,.75) 100%)}
 /* portrait gate */
 #rotate{display:none;position:fixed;inset:0;z-index:60;background:#050203;
   align-items:center;justify-content:center;text-align:center;font-size:22px;

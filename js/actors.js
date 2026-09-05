@@ -42,7 +42,10 @@ function buildNPC(opts){
   g.position.set(opts.pos[0], V.groundY(opts.pos[0], opts.pos[2]), opts.pos[2]);
   V.scene.add(g);
   var rec = { obj: g, baseY: g.position.y, seed: Math.random()*10, npc: opts,
-              mixer: null, model: null };
+              mixer: null, model: null, dead: false };
+  var label = nameLabel({ dren: 'DREN', sella: 'SELLA', issa: 'ISSA' }[opts.id] || opts.id);
+  label.position.y = (NPC_MODELS[opts.id] ? NPC_MODELS[opts.id].h : 1.8) + 0.9;
+  g.add(label);
   var spec = NPC_MODELS[opts.id];
   if (spec) {
     new THREE.GLTFLoader().load(spec.url, function(r){
@@ -153,10 +156,36 @@ function setAct(i){
 function nearestNPC(){
   var kp = V.kaelPos, best = null, bd = 36;
   npcs.forEach(function(n){
+    if (n.dead) return;
     var d = n.obj.position.distanceToSquared(kp);
     if (d < bd) { bd = d; best = n; }
   });
   return best;
+}
+function nameLabel(text){
+  var c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  var x = c.getContext('2d');
+  x.fillStyle = 'rgba(5,2,3,0.55)'; x.fillRect(28, 8, 200, 44);
+  x.strokeStyle = '#d9a441'; x.strokeRect(28, 8, 200, 44);
+  x.font = '26px Georgia'; x.textAlign = 'center'; x.fillStyle = '#e8dcc0';
+  x.fillText(text, 128, 40);
+  var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
+  sp.scale.set(2.6, 0.65, 1);
+  return sp;
+}
+/* death: slump, blood pool, struck from interaction */
+function slumpNPC(n, bled){
+  if (!n || n.dead) return;
+  n.dead = true;
+  n.obj.traverse(function(o){ if (o.isSprite) o.visible = false; });
+  n.obj.rotation.z = 1.35;
+  n.obj.position.y = n.baseY + 0.35;
+  var p = n.obj.position;
+  var pool = new THREE.Mesh(new THREE.CircleGeometry(2.2, 14),
+    new THREE.MeshBasicMaterial({ color: 0x550000, transparent: true, opacity: 0.75 }));
+  pool.rotation.x = -Math.PI/2;
+  pool.position.set(p.x, V.groundY(p.x, p.z) + 0.12, p.z);
+  V.scene.add(pool);
 }
 window.VEYL_INTERACT = function(){
   if (V.isBusy()) return;
@@ -165,14 +194,22 @@ window.VEYL_INTERACT = function(){
   else if (nearSerpent() && !Q.over) talkSerpent();
 };
 
+function npcById(id){
+  for (var i = 0; i < npcs.length; i++) if (npcs[i].npc.id === id) return npcs[i];
+  return null;
+}
 function talkTo(id){
   if (id === 'dren' && !Q.metDren) {
     V.startConvo(S.npc.dren.tree, { onDone: function(){
-      Q.metDren = true; setAct(1);
-      V.logStep('Enter the south gate', 'done');
-      V.logStep('Find Sella\'s shop (lantern door)', 'now');
-      V.setMarker(S.markers.sella[0], S.markers.sella[1]);
-      V.toast('Act II — the market feeds the hive.', 3000);
+      Q.metDren = true;
+      // ambush: hive scout dives the gate — tutorial kill
+      V.startConvo(S.npc.dren.ambush, { onDone: function(){
+        var s = buildDrone(2, 122); s.hp = 24; s.scout = true;
+        s.obj.scale.setScalar(1.25);
+        Q.drones.push(s);
+        V.setObjective('Kill the hive scout!');
+        V.toast('A scout dives the gatehouse!', 3000);
+      }});
     }});
   } else if (id === 'sella' && !Q.metSella) {
     V.startConvo(S.npc.sella.tree, { onDone: function(){
@@ -182,6 +219,7 @@ function talkTo(id){
       V.setMarker(S.markers.market[0], S.markers.market[1]);
       V.setObjective('Cleanse the hive drones in the market (0/3).');
       [[30,58],[44,72],[36,80]].forEach(function(p){ Q.drones.push(buildDrone(p[0], p[1])); });
+      Q.marketT0 = performance.now();
       V.toast('They come off the stalls — steel out!', 3000);
     }});
   } else if (id === 'issa' && !Q.metIssa) {
@@ -199,11 +237,45 @@ function talkTo(id){
   } else {
     var flavor = {
       dren: [["DREN","North, exile. The avenue won't walk itself."]],
-      sella: [["SELLA","Still breathing, still selling. The temple stairs, knight — mind the red ones."]],
+      sella: [["SELLA","Still breathing, still selling. Mind the red stairs, knight."]],
       issa: [["ISSA","The brand burns with you. Go down the throat of the hall."]]
     };
     V.startConvo(flavor[id]);
   }
+}
+function drenDeath(){
+  Q.dren_dead = true;
+  V.startConvo(S.npc.dren.death, { onDone: function(){
+    slumpNPC(npcById('dren'));
+    V.logStep('Enter the south gate', 'done');
+    V.logStep('Find Sella\'s shop (lantern door)', 'now');
+    V.setMarker(S.markers.sella[0], S.markers.sella[1]);
+    setAct(1);
+    V.toast('Act II — the market feeds the hive.', 3000);
+  }});
+}
+function sellaDeath(){
+  if (Q.sella_dead) return;
+  Q.sella_dead = true;
+  slumpNPC(npcById('sella'));
+  V.logStep('Destroy the hive drones (0/3)', 'done');
+  V.logStep('Sella has fallen — finish them', 'now');
+  V.toast(S.toasts.sellaFalls, 5000);
+}
+function issaDeath(){
+  if (Q.issa_dead) return;
+  Q.issa_dead = true;
+  var n = npcById('issa');
+  if (n) { // she drags herself to the veil
+    n.obj.position.set(8, V.groundY(8, -10), -10);
+    n.baseY = n.obj.position.y;
+  }
+  V.startConvo(S.npc.issa.death, { onDone: function(){
+    slumpNPC(n);
+    V.logStep('Enter the ember veil', 'done');
+    V.logStep('Face what bleeds', 'now');
+    V.setMarker(S.markers.serpent[0], S.markers.serpent[1]);
+  }});
 }
 
 /* ---------- serpent finale ---------- */
@@ -220,18 +292,44 @@ function talkSerpent(){
   }
   Q.serpentMet = true;
   bossWrap.classList.remove('hidden');
-  V.startConvo(S.npc.serpent.tree, { choices: S.npc.serpent.choices.map(function(c){
-    return { label: c.label, cb: function(){ endGame(c.ending); } };
-  })});
+  // sever needs proof of compassion: mercy + Maren's ring
+  var F = window.VEYL_FLAGS;
+  var canSever = F.mercy && F.has_ring;
+  if (!canSever) {
+    var why = !F.mercy ? 'it never tasted your mercy' : 'you carry no proof of the small dead';
+    V.toast('The third path is closed — ' + why + '.', 4000);
+  }
+  // strip the sever branch for the unworthy (engine jumps by label; prune node)
+  var tree = S.npc.serpent.tree.filter(function(nd){
+    return !(Array.isArray(nd) === false && nd.choice);
+  });
+  var ch = [
+    { label: '⛓ BIND — kneel, take the crown', cb: function(){ endGame('bind'); } },
+    { label: '⚔ BREAK — drive the brand through its heart', cb: function(){ endGame('break'); } }
+  ];
+  if (canSever) ch.push({ label: '✋ SEVER — cut the brood from the shell', cb: function(){ endGame('sever'); } });
+  V.startConvo(tree, { choices: ch });
 }
 function endGame(which){
   Q.over = true;
-  bossFill.style.width = (which === 'break' ? '0%' : '100%');
+  bossFill.style.width = which === 'break' ? '0%' : '100%';
   document.body.style.transition = 'filter 2.5s';
-  document.body.style.filter = which === 'break' ? 'brightness(1.6) saturate(0.4)' : 'brightness(0.5) saturate(1.6) hue-rotate(-30deg)';
+  document.body.style.filter = which === 'break'
+    ? 'brightness(1.7) saturate(0.2)'
+    : which === 'sever'
+      ? 'brightness(1.3) saturate(0.7)'
+      : 'brightness(0.5) saturate(1.6) hue-rotate(-30deg)';
+  if (which === 'bind' || which === 'break') {
+    V.logStep('Face what bleeds', 'done');
+    V.logStep(which === 'break' ? 'The Hatching begins' : 'The Bleeding Reign', 'now');
+  } else {
+    V.logStep('Face what bleeds', 'done');
+    V.logStep('The Quiet Dawn', 'now');
+  }
   V.startConvo(S.endings[which], { onDone: function(){
-    V.setObjective(which === 'break' ? 'THE DAWN REFUSAL — fin.' : 'THE BLEEDING REIGN — fin.');
-    V.toast('Thank you for playing VEYL. Reload to walk it again.', 8000);
+    V.setObjective(which === 'break' ? 'THE HATCHING — fin.'
+      : which === 'sever' ? 'THE QUIET DAWN — fin.' : 'THE BLEEDING REIGN — fin.');
+    V.toast('Thank you for playing VEYL. Reload to walk it again.', 9000);
   }});
 }
 
@@ -258,15 +356,34 @@ window.VEYL_SWING = function(){
 var shake = 0;
 function kill(e){
   e.dead = true; window.SFX.hit();
+  if (e.scout) { drenDeath(); return; }                       // tutorial kill -> Dren falls
+  if (e.brood) {                                              // broodmother down
+    Q.broodDead = true;
+    if (window.VEYL_FLAGS.asked_husband) {
+      window.VEYL_FLAGS.has_ring = true;
+      V.toast(S.toasts.ringFound, 5000);
+      V.logStep('Maren\'s ring recovered', 'done');
+    }
+    V.setObjective('Climb to Priest Issa in the court.');
+    V.logStep('Destroy the hive drones (0/3)', 'done');
+    V.logStep('Climb to Priest Issa', 'now');
+    V.setMarker(S.markers.issa[0], S.markers.issa[1]);
+    V.toast(S.toasts.marketClear, 3500);
+    return;
+  }
   if (Q.drones.indexOf(e) >= 0) {
     Q.dronesDead++; V.toast(S.toasts.droneDown + ' (' + Q.dronesDead + '/3)');
     V.setObjective('Cleanse the hive drones in the market (' + Q.dronesDead + '/3).');
-    if (Q.dronesDead >= 3) {
-      V.setObjective('Climb to Priest Issa in the court.');
-      V.logStep('Destroy the hive drones (0/3)', 'done');
-      V.logStep('Climb to Priest Issa', 'now');
-      V.setMarker(S.markers.issa[0], S.markers.issa[1]);
-      V.toast(S.toasts.marketClear, 3500);
+    if (Q.dronesDead >= 3 && !Q.broodSpawned) {
+      Q.broodSpawned = true;
+      // the hive speaks through the dying drone, then rises
+      V.startConvo(S.npc.sella.broodmother.tree, { onDone: function(){
+        var b = buildDrone(40, 68); b.hp = 90; b.brood = true;
+        b.obj.scale.setScalar(1.7);
+        Q.drones.push(b);
+        V.setObjective('Kill the broodmother!');
+        V.toast('Something bigger unfolds off the stalls...', 3500);
+      }});
     }
   } else {
     Q.husksDead++; V.toast(S.toasts.huskDown + ' (' + Q.husksDead + '/2)');
@@ -324,11 +441,16 @@ function loop(){
     interactEl.classList.remove('hidden');
   } else { interactEl.classList.add('hidden'); }
 
-  // spawn husks on hall entry
+  // Sella's clock: 75s after the nest wakes, the market takes her
+  if (Q.marketT0 && !Q.sella_dead && Q.dronesDead < 3 && now - Q.marketT0 > 75000) sellaDeath();
+  // spawn husks on hall entry (+ Issa follows, dying, to open the way)
   if (!husksSpawned && kp.z < -12 && Math.abs(kp.x) < 26) {
-    V.logStep('Enter the ember veil', 'done');
-    V.logStep('Face the Bleeding Serpent', 'now');
-    V.setMarker(S.markers.serpent[0], S.markers.serpent[1]);
+    if (!Q.issa_dead && Q.metIssa) issaDeath();
+    else {
+      V.logStep('Enter the ember veil', 'done');
+      V.logStep('Face the Bleeding Serpent', 'now');
+      V.setMarker(S.markers.serpent[0], S.markers.serpent[1]);
+    }
     husksSpawned = true;
     Q.husks.push(buildHusk(-12, -30)); Q.husks.push(buildHusk(12, -38));
     V.toast('The hall exhales. Husks rise from the pews of bone.', 3500);

@@ -105,51 +105,127 @@ function toast(t, ms){
 }
 function setHP(v){ hpFill.style.width = Math.max(0, v)+'%'; }
 
-// ---------- dialogue with choices ----------
+// ---------- dialogue engine v2: beats, portraits, flags, inline choices ----------
+// Script is an array of nodes:
+//   ["NAME", "text with [p] short beat, [P] long beat"]   line
+//   { choice: [{label, set:{flag:val}, goto:"label"|null, cb}] }   player choice
+//   { set: {flag: value} }                                flag write
+//   { if: "flag", then: [...], else: [...] }              conditional splice
+//   { label: "name" }                                     jump target
+//   { jump: "name" }                                      goto
+//   { end: true }                                         close now
+window.VEYL_FLAGS = {};
+var SPEAK_COLORS = { KAEL: '#d9a441', DREN: '#8a97b8', SELLA: '#ff7b14', ISSA: '#e8dcc0',
+  SERPENT: '#c1121f', CHRONICLE: '#8a6f52', 'THE END?': '#c1121f' };
 var dlg = document.getElementById('dlg'), dlgName = document.getElementById('dlg-name'),
     dlgText = document.getElementById('dlg-text'),
     dlgChoices = document.getElementById('dlg-choices');
-var convo = null, line = 0, typing = null, convoDone = null, convoChoices = null;
+var convo = null, line = 0, typing = null, convoDone = null, endChoices = null;
+function flagTrue(f){ var v = window.VEYL_FLAGS[f]; return v === true || (typeof v === 'number' && v > 0); }
+function runNode(nd){
+  if (Array.isArray(nd)) { showLine(nd[0], nd[1]); return false; }
+  if (nd.set) { for (var k in nd.set) window.VEYL_FLAGS[k] = nd.set[k]; return true; }
+  if (nd.if) {
+    var branch = flagTrue(nd.if) ? (nd.then || []) : (nd.else || []);
+    convo = convo.slice(0, line + 1).concat(branch, convo.slice(line + 1));
+    return true;
+  }
+  if (nd.label) return true;
+  if (nd.jump) {
+    for (var i = 0; i < convo.length; i++)
+      if (!Array.isArray(convo[i]) && convo[i].label === nd.jump) { line = i; return showLineNode(), false; }
+    return true;
+  }
+  if (nd.choice) { showChoices(nd.choice); return false; }
+  if (nd.end) { closeConvo(); return false; }
+  return true;
+}
+function showLineNode(){ return runNode(convo[line]); }
+var dlgSkip = document.getElementById('dlg-skip');
 function startConvo(lines, opts){
   opts = opts || {};
-  convo = lines; line = 0; convoDone = opts.onDone || null; convoChoices = opts.choices || null;
+  convo = lines.slice(); line = 0;
+  convoDone = opts.onDone || null; endChoices = opts.choices || null;
   dlg.classList.remove('hidden'); dlgChoices.classList.add('hidden'); dlgChoices.innerHTML = '';
-  showLine();
+  if (opts.skip) {
+    dlgSkip.classList.remove('hidden');
+    dlgSkip.onclick = function(ev){ ev.stopPropagation(); window.SFX.ui(); line = convo.length; stepConvo(); };
+  } else dlgSkip.classList.add('hidden');
+  stepConvo();
 }
-function showLine(){
-  dlgName.textContent = convo[line][0]; dlgText.textContent = '';
-  clearInterval(typing); var tx = convo[line][1], i = 0;
-  typing = setInterval(function(){
-    dlgText.textContent = tx.slice(0, ++i);
-    if (i >= tx.length) clearInterval(typing);
-  }, 16);
+function stepConvo(){
+  while (line < convo.length) {
+    if (!runNode(convo[line])) return;   // line shown or choices open or closed
+    line++;
+  }
+  if (endChoices) { showChoices(endChoices); endChoices = null; return; }
+  closeConvo();
 }
+function showLine(sp, tx){
+  var key = String(sp).split(',')[0].split(' ')[0].toUpperCase();
+  dlgName.textContent = '◆ ' + sp;
+  dlgName.style.color = SPEAK_COLORS[key] || '#ff7b14';
+  dlgText.textContent = '';
+  stopType();
+  // tokenize beats: [p]=350ms, [P]=900ms
+  var toks = [], buf = '';
+  for (var i = 0; i < tx.length; i++) {
+    if (tx[i] === '[' && (tx[i+1] === 'p' || tx[i+1] === 'P') && tx[i+2] === ']') {
+      if (buf) { toks.push({ t: 'txt', s: buf }); buf = ''; }
+      toks.push({ t: 'wait', ms: tx[i+1] === 'p' ? 350 : 950 });
+      i += 2;
+    } else buf += tx[i];
+  }
+  if (buf) toks.push({ t: 'txt', s: buf });
+  dlgText.dataset.full = tx.replace(/\[p\]|\[P\]/g, '');
+  var ti = 0, ci = 0, cur = '';
+  function drive(){
+    if (ti >= toks.length) { typing = null; return; }
+    var tk = toks[ti];
+    if (tk.t === 'wait') {
+      ti++; ci = 0; typing = setTimeout(drive, tk.ms); return;
+    }
+    cur += tk.s[ci++];
+    dlgText.textContent = cur;
+    if (ci >= tk.s.length) { ti++; ci = 0; }
+    typing = setTimeout(drive, /[,.!?;:—]/.test(tk.s[ci-1]) ? 70 : 18);  // punctuation breathes
+  }
+  drive();
+}
+function stopType(){ if (typing) { clearInterval(typing); clearTimeout(typing); typing = null; } }
 function advanceConvo(){
   if (!convo) return;
   window.SFX.ui();
-  if (dlgText.textContent.length < convo[line][1].length) {
-    clearInterval(typing); dlgText.textContent = convo[line][1]; return;
+  if (dlgText.textContent.length < dlgText.dataset.full.length) {
+    stopType();
+    dlgText.textContent = dlgText.dataset.full; return;
   }
   line++;
-  if (line >= convo.length) {
-    if (convoChoices) { showChoices(); return; }
-    closeConvo();
-  } else showLine();
+  stepConvo();
 }
-function showChoices(){
+function showChoices(list){
   dlgChoices.innerHTML = ''; dlgChoices.classList.remove('hidden');
-  convoChoices.forEach(function(c){
+  list.forEach(function(c){
     var b = document.createElement('button'); b.textContent = c.label;
     b.addEventListener('click', function(ev){
       ev.stopPropagation(); window.SFX.choice();
-      var cb = c.cb; closeConvo(); if (cb) cb();
+      if (c.set) for (var k in c.set) window.VEYL_FLAGS[k] = c.set[k];
+      dlgChoices.classList.add('hidden');
+      if (c.goto) {
+        for (var i = 0; i < convo.length; i++)
+          if (!Array.isArray(convo[i]) && convo[i].label === c.goto) { line = i; stepConvo(); return; }
+      }
+      if (c.cb) { var cb = c.cb; closeConvo(); cb(); return; }
+      line++; stepConvo();
     });
     dlgChoices.appendChild(b);
   });
 }
 function closeConvo(){
+  stopType();
   dlg.classList.add('hidden'); dlgChoices.classList.add('hidden');
-  convo = null; var f = convoDone; convoDone = null; if (f) f();
+  dlgSkip.classList.add('hidden');
+  convo = null; var f = convoDone; convoDone = null; endChoices = null; if (f) f();
 }
 dlg.addEventListener('click', advanceConvo);
 
@@ -268,9 +344,11 @@ function sampleGround(x, z){
   }
   return groundY(x, z);
 }
+var vignette = document.getElementById('vignette'), vig = 0;
 function hurt(dmg){
   if (!player.alive) return;
   player.hp -= dmg; setHP(player.hp); window.SFX.hurt();
+  vig = Math.min(1, vig + 0.55);
   if (player.hp <= 0) {
     player.alive = false;
     toast('Kael falls. The blood takes him home… (tap to rise at the gate)', 6000);
@@ -391,21 +469,34 @@ function tick(){
     }
     var amt = Math.min(1, Math.hypot(mvX, mvZ));
     player.moveAmt = amt;
-    var sp = ((keys.ShiftLeft || keys.ShiftRight) ? 15 : 9) * amt;
-    if (amt > 0.05) {
-      // camera-relative move dir
-      var dx = -Math.sin(yaw)*mvZ + Math.cos(yaw)*mvX;
-      var dz = -Math.cos(yaw)*mvZ - Math.sin(yaw)*mvX;
-      var nx = kaelPos.x + dx*sp*dt, nz = kaelPos.z + dz*sp*dt;
+    // analog curve + accel/decel: velocity chases intent, never snaps
+    var curved = Math.pow(Math.min(1, amt), 1.35);
+    var sp = ((keys.ShiftLeft || keys.ShiftRight) ? 15 : 9) * curved;
+    var dx = -Math.sin(yaw)*mvZ + Math.cos(yaw)*mvX;
+    var dz = -Math.cos(yaw)*mvZ - Math.sin(yaw)*mvX;
+    var dl = Math.hypot(dx, dz) || 1;
+    var txv = dx/dl*sp, tzv = dz/dl*sp;
+    if (curved < 0.05) { txv = 0; tzv = 0; }
+    var rate = player.grounded ? (curved > 0.05 ? 9 : 13) : 2.5;
+    player.vx = (player.vx || 0) + (txv - (player.vx || 0)) * Math.min(1, dt*rate);
+    player.vz = (player.vz || 0) + (tzv - (player.vz || 0)) * Math.min(1, dt*rate);
+    var spdNow = Math.hypot(player.vx, player.vz);
+    player.moveAmt = Math.min(1, spdNow/9);
+    if (spdNow > 0.4) {
+      var nx = kaelPos.x + player.vx*dt, nz = kaelPos.z + player.vz*dt;
       nx = Math.max(-300, Math.min(300, nx)); nz = Math.max(-300, Math.min(330, nz));
       // axis-separated slide: colliders + temple mass
       if (!blocked(nx, kaelPos.z) && !collide(nx, kaelPos.z)) kaelPos.x = nx;
+      else player.vx *= 0.2;
       if (!blocked(kaelPos.x, nz) && !collide(kaelPos.x, nz)) kaelPos.z = nz;
-      var want = Math.atan2(dx, dz);
+      else player.vz *= 0.2;
+      var want = Math.atan2(player.vx, player.vz);
       var d = want - kaelYaw;
       while (d > Math.PI) d -= 2*Math.PI; while (d < -Math.PI) d += 2*Math.PI;
-      kaelYaw += d * Math.min(1, dt*10);
-    }
+      kaelYaw += d * Math.min(1, dt*9);
+      if (K) K.root.rotation.z += ((-d*0.35) - K.root.rotation.z) * Math.min(1, dt*6); // bank turns
+    } else if (K) K.root.rotation.z *= 1 - Math.min(1, dt*6);
+    var amt = player.moveAmt;
     // gravity + jump: coyote, buffer, variable height, heavy fall, apex hang
     var gy = sampleGround(kaelPos.x, kaelPos.z);
     if (player.grounded) player.coyote = 0.1; else player.coyote = Math.max(0, player.coyote - dt);
@@ -475,6 +566,9 @@ function tick(){
   }
   ember.intensity = 1.0 + Math.sin(performance.now()*0.0021)*0.18;
   if (bloodTex) { bloodTex.offset.x += dt*0.025; bloodTex.offset.y += dt*0.011; }
+  var lowHP = (player.hp < 35 && player.alive) ? (0.35 + Math.sin(performance.now()*0.006)*0.2) : 0;
+  vig = Math.max(lowHP, vig - dt*1.4);
+  vignette.style.opacity = vig.toFixed(2);
   for (var di = 0; di < dusts.length; di++) {
     var dm = dusts[di];
     if (!dm.on) continue;
