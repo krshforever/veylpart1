@@ -32,8 +32,8 @@ var AudioSys = { ctx: null };
 function initAudio(){
   var a = document.createElement('audio');
   a.loop = true; a.volume = 0.55; a.preload = 'auto';
-  var s1 = document.createElement('source'); s1.src = 'audio/ambience.mp3'; s1.type = 'audio/mpeg';
-  var s2 = document.createElement('source'); s2.src = 'audio/ambience.ogg'; s2.type = 'audio/ogg';
+  var s1 = document.createElement('source'); s1.src = 'audio/ambience.mp3?v=2'; s1.type = 'audio/mpeg';
+  var s2 = document.createElement('source'); s2.src = 'audio/ambience.ogg?v=2'; s2.type = 'audio/ogg';
   a.appendChild(s1); a.appendChild(s2);
   var p = a.play(); if (p && p.catch) p.catch(function(){});
   try {
@@ -150,7 +150,7 @@ function makeBloodTexture(){
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 6);
   return t;
 }
-new THREE.GLTFLoader().load('models/veyl_city.glb',
+new THREE.GLTFLoader().load('models/veyl_city.glb?v=2',
   function(g){
     world = g.scene; scene.add(world);
     // blood water: scrolling flow map
@@ -168,7 +168,7 @@ new THREE.GLTFLoader().load('models/veyl_city.glb',
     scene.add(marker);
     // colliders
     var xhr = new XMLHttpRequest();
-    xhr.open('GET', 'models/colliders.json', true);
+    xhr.open('GET', 'models/colliders.json?v=2', true);
     xhr.onload = function(){ try { colliders = JSON.parse(xhr.responseText).block || []; } catch(e){} };
     xhr.send();
     K = window.KAEL.build();
@@ -275,7 +275,7 @@ window.addEventListener('pointerup', function(e){
 });
 window.addEventListener('pointermove', function(e){
   if (!dragging || convo) return;
-  yaw -= (e.clientX - lx) * 0.0034; pitch -= (e.clientY - ly) * 0.0028;
+  yaw -= (e.clientX - lx) * 0.0034; pitch += (e.clientY - ly) * 0.0028;
   pitch = Math.max(-0.5, Math.min(0.9, pitch)); lx = e.clientX; ly = e.clientY;
 });
 var stick = { x: 0, y: 0, on: false };
@@ -294,11 +294,16 @@ var stick = { x: 0, y: 0, on: false };
     stick.x = dx/42; stick.y = dy/42; stick.on = true;
   }
 })();
-document.getElementById('btn-act').addEventListener('click', function(){
+function touchBtn(id, fn){
+  var el = document.getElementById(id);
+  el.addEventListener('pointerdown', function(e){ e.preventDefault(); e.stopPropagation(); fn(); });
+  el.addEventListener('click', function(e){ e.preventDefault(); fn(); });
+}
+touchBtn('btn-act', function(){
   if (convo) advanceConvo(); else if (window.VEYL_INTERACT) window.VEYL_INTERACT();
 });
-document.getElementById('btn-atk').addEventListener('click', function(){ player.wantAttack = true; });
-document.getElementById('btn-jump').addEventListener('click', function(){ player.wantJump = true; });
+touchBtn('btn-atk', function(){ player.wantAttack = true; });
+touchBtn('btn-jump', function(){ player.wantJump = true; });
 
 // ---------- loop ----------
 var started = false, clock = new THREE.Clock();

@@ -26,7 +26,12 @@ function buildKnight(){
   var K = { root: new THREE.Group(), ready: false, mixer: null,
             armR: null, phase: 0, atkT: -1, fallback: false };
   K.root.add(buildCapsule());   // instant body, swapped when knight lands
-  new THREE.GLTFLoader().load('models/knight/scene.gltf',
+  var errBox = document.getElementById('err');
+  function failWhy(m){
+    K.failMsg = m;
+    if (errBox) { errBox.style.display = 'block'; errBox.textContent += '\nKNIGHT: ' + m; }
+  }
+  new THREE.GLTFLoader().load('models/knight/scene.gltf?v=3',
     function(g){
       var model = g.scene;
       // normalize: model is ~212 units tall, faces +Z (verified below at runtime)
@@ -48,8 +53,11 @@ function buildKnight(){
       K.ready = true;
     },
     undefined,
-    function(){ K.fallback = true; }  // capsule stays
+    function(err){ K.fallback = true; failWhy('load error: ' + (err && (err.message || err.target && err.target.status) || err)); }
   );
+  setTimeout(function(){
+    if (!K.ready && !K.failMsg) failWhy('still loading after 12s (network?)');
+  }, 12000);
   return K;
 }
 

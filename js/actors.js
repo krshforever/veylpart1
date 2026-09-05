@@ -17,9 +17,9 @@ function box(w,h,d,m,x,y,z){
 
 /* ---------- NPCs: real Sketchfab bodies (CC-BY, credited) + role props ---------- */
 var NPC_MODELS = {
-  dren:  { url: 'models/guard/scene.gltf', h: 1.95 },    // Castle Guard, rigged+anim
-  sella: { url: 'models/peasant/scene.gltf', h: 1.7, pick: 1 },  // peasant variants
-  issa:  { url: 'models/peasant/scene.gltf', h: 1.8, pick: 2 }
+  dren:  { url: 'models/guard/scene.gltf?v=2', h: 1.95 },    // Castle Guard, rigged+anim
+  sella: { url: 'models/peasant/scene.gltf?v=2', h: 1.7, pick: 1 },  // peasant variants
+  issa:  { url: 'models/peasant/scene.gltf?v=2', h: 1.8, pick: 2 }
 };
 function buildNPC(opts){
   var g = new THREE.Group();
