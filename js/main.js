@@ -70,17 +70,43 @@ function spawnPuff(x, y, z, big){
 
 // ---------- audio: licensed loop + synth SFX ----------
 var AudioSys = { ctx: null };
+var noiseBuf = null;
 function initAudio(){
   var a = document.createElement('audio');
   AudioSys.el = a;
   a.loop = true; a.volume = 0.55; a.preload = 'auto';
+  try {
+    AudioSys.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // master lowpass for death sweep (ambience routed through it)
+    AudioSys.master = AudioSys.ctx.createBiquadFilter();
+    AudioSys.master.type = 'lowpass'; AudioSys.master.frequency.value = 18000;
+    AudioSys.master.connect(AudioSys.ctx.destination);
+    try {
+      AudioSys.src = AudioSys.ctx.createMediaElementSource(a);
+      AudioSys.src.connect(AudioSys.master);
+    } catch(e){}
+    // shared noise buffer for footsteps/clash
+    noiseBuf = AudioSys.ctx.createBuffer(1, AudioSys.ctx.sampleRate*0.15, AudioSys.ctx.sampleRate);
+    var ch = noiseBuf.getChannelData(0);
+    for (var i = 0; i < ch.length; i++) ch[i] = Math.random()*2 - 1;
+    // drone hum: detuned saws through lowpass, gain driven by proximity
+    AudioSys.humOsc = AudioSys.ctx.createOscillator(); AudioSys.humOsc.type = 'sawtooth';
+    AudioSys.humOsc.frequency.value = 82;
+    AudioSys.humOsc2 = AudioSys.ctx.createOscillator(); AudioSys.humOsc2.type = 'sawtooth';
+    AudioSys.humOsc2.frequency.value = 123;
+    AudioSys.humFilter = AudioSys.ctx.createBiquadFilter();
+    AudioSys.humFilter.type = 'lowpass'; AudioSys.humFilter.frequency.value = 260;
+    AudioSys.humGain = AudioSys.ctx.createGain(); AudioSys.humGain.gain.value = 0;
+    AudioSys.humOsc.connect(AudioSys.humFilter); AudioSys.humOsc2.connect(AudioSys.humFilter);
+    AudioSys.humFilter.connect(AudioSys.humGain); AudioSys.humGain.connect(AudioSys.master);
+    AudioSys.humOsc.start(); AudioSys.humOsc2.start();
+  } catch(e){}
+  function out(node){ try { node.connect(AudioSys.master || AudioSys.ctx.destination); } catch(e2){ try { node.connect(AudioSys.ctx.destination); } catch(e3){} } }
+  AudioSys.out = out;
   var s1 = document.createElement('source'); s1.src = 'audio/ambience.mp3?v=2'; s1.type = 'audio/mpeg';
   var s2 = document.createElement('source'); s2.src = 'audio/ambience.ogg?v=2'; s2.type = 'audio/ogg';
   a.appendChild(s1); a.appendChild(s2);
   var p = a.play(); if (p && p.catch) p.catch(function(){});
-  try {
-    AudioSys.ctx = new (window.AudioContext || window.webkitAudioContext)();
-  } catch(e){}
 }
 function blip(freq, dur, type, vol){
   if (!AudioSys.ctx) return;
@@ -93,12 +119,54 @@ function blip(freq, dur, type, vol){
     o.start(); o.stop(AudioSys.ctx.currentTime + (dur || 0.15));
   } catch(e){}
 }
+function noiseHit(freq, q, dur, vol){
+  if (!AudioSys.ctx || !noiseBuf) return;
+  try {
+    var s = AudioSys.ctx.createBufferSource(); s.buffer = noiseBuf;
+    s.playbackRate.value = 0.85 + Math.random()*0.3;          // ±8%+ pitch variation
+    var f = AudioSys.ctx.createBiquadFilter(); f.type = 'bandpass';
+    f.frequency.value = freq; f.Q.value = q || 1;
+    var g = AudioSys.ctx.createGain();
+    g.gain.setValueAtTime(vol, AudioSys.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, AudioSys.ctx.currentTime + dur);
+    s.connect(f); f.connect(g);
+    if (AudioSys.out) AudioSys.out(g); else g.connect(AudioSys.ctx.destination);
+    s.start(); s.stop(AudioSys.ctx.currentTime + dur);
+  } catch(e){}
+}
+function surfaceAt(x, z){
+  if (Math.abs(x) < 14 && z > -26 && z < 122) return 'stone';  // stairs/avenue/court
+  if (Math.abs(x) < 27 && z <= -12 && z >= -71) return 'stone';// hall/sanctuary
+  if (x > 96 && z > 20 && z < 100) return 'wood';              // piers
+  if (Math.abs(x) > 84 || z < -144 || z > 114) return 'dirt';
+  return 'dirt';
+}
 window.SFX = {
   swing: function(){ blip(320, 0.12, 'sawtooth', 0.08); },
   hit:   function(){ blip(90, 0.25, 'square', 0.16); },
   hurt:  function(){ blip(70, 0.35, 'sawtooth', 0.2); },
   ui:    function(){ blip(660, 0.06, 'sine', 0.07); },
-  choice:function(){ blip(440, 0.1, 'sine', 0.09); setTimeout(function(){ blip(550,0.12,'sine',0.09); }, 110); }
+  choice:function(){ blip(440, 0.1, 'sine', 0.09); setTimeout(function(){ blip(550,0.12,'sine',0.09); }, 110); },
+  step:  function(x, z){
+    var s = surfaceAt(x, z);
+    if (s === 'stone') noiseHit(2400, 2.5, 0.09, 0.10);
+    else if (s === 'wood') noiseHit(850, 2, 0.12, 0.13);
+    else noiseHit(380, 0.8, 0.14, 0.15);
+  },
+  clash: function(){ blip(1240, 0.07, 'square', 0.1); noiseHit(3200, 3, 0.08, 0.09); },
+  hum:   function(level){
+    if (!AudioSys.humGain) return;
+    try {
+      var g = AudioSys.humGain.gain;
+      g.setTargetAtTime(Math.min(0.2, level), AudioSys.ctx.currentTime, 0.3);
+    } catch(e){}
+  },
+  sweep: function(down){
+    if (!AudioSys.master) return;
+    try {
+      AudioSys.master.frequency.setTargetAtTime(down ? 280 : 18000, AudioSys.ctx.currentTime, down ? 0.8 : 0.4);
+    } catch(e){}
+  }
 };
 
 // ---------- HUD ----------
@@ -249,7 +317,7 @@ dlg.addEventListener('click', advanceConvo);
 // ---------- world + Kael ----------
 var K = null, kaelPos = new THREE.Vector3(0, 0, 168);
 var kaelYaw = Math.PI;   // facing north (-z)
-var world = null, colliders = [], bloodMats = [], bloodTex = null, marker = null;
+var world = null, texMesh = null, colliders = [], bloodMats = [], bloodTex = null, marker = null;
 var rayc = new THREE.Raycaster(), rayDir = new THREE.Vector3(0, -1, 0), rayFrame = 0;
 function makeBloodTexture(){
   var c = document.createElement('canvas'); c.width = c.height = 128;
@@ -271,6 +339,10 @@ function makeBloodTexture(){
 new THREE.GLTFLoader().load('models/veyl_city.glb?v=2',
   function(g){
     world = g.scene; scene.add(world);
+    // solid-only collider set: tex mesh (skip transparent blood/glow/gold)
+    world.traverse(function(o){
+      if (o.isMesh && o.material && o.material.name === 'tex') texMesh = o;
+    });
     // blood water: scrolling flow map
     bloodTex = makeBloodTexture();
     world.traverse(function(o){
@@ -278,11 +350,23 @@ new THREE.GLTFLoader().load('models/veyl_city.glb?v=2',
         o.material.map = bloodTex; o.material.needsUpdate = true; bloodMats.push(o.material);
       }
     });
-    // objective beacon
-    marker = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.1, 1.6, 26, 8, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.32,
-        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    // objective beacon: thin beam + ground ring + bobbing chevron (reads as UI, not geometry)
+    marker = new THREE.Group();
+    var beamMat = new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.28,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    var beam = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.7, 30, 8, 1, true), beamMat);
+    beam.position.y = 15; marker.add(beam);
+    var ring = new THREE.Mesh(new THREE.TorusGeometry(2.4, 0.22, 8, 28),
+      new THREE.MeshBasicMaterial({ color: 0xffc861, transparent: true, opacity: 0.75,
+        blending: THREE.AdditiveBlending, depthWrite: false }));
+    ring.rotation.x = -Math.PI/2; ring.position.y = 0.6; marker.add(ring);
+    marker.userData.ring = ring;
+    var chev = new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.6, 4),
+      new THREE.MeshBasicMaterial({ color: 0xffc861, transparent: true, opacity: 0.9,
+        blending: THREE.AdditiveBlending, depthWrite: false }));
+    chev.rotation.x = Math.PI; chev.position.y = 21; marker.add(chev);
+    marker.userData.chev = chev;
+    marker.visible = false;
     scene.add(marker);
     // colliders
     var xhr = new XMLHttpRequest();
@@ -333,7 +417,7 @@ function logStep(text, state){
 }
 function setMarker(x, z){
   if (!marker) return;
-  marker.position.set(x, groundY(x, z) + 13, z);
+  marker.position.set(x, groundY(x, z), z);
   marker.visible = true;
 }
 
@@ -350,28 +434,47 @@ function collide(nx, nz){
   }
   return false;
 }
+function solidSet(){
+  return texMesh ? [texMesh] : (world ? [world] : []);
+}
 function sampleGround(x, z){
-  // raycast real mesh every 4th frame; zone heights as instant fallback
+  // raycast solid mesh every 4th frame; zone heights as instant fallback
   rayFrame++;
-  if (world && rayFrame % 4 === 0) {
+  var set = solidSet();
+  if (set.length && rayFrame % 4 === 0) {
     rayc.set(new THREE.Vector3(x, kaelPos.y + 6, z), rayDir);
-    rayc.far = 30;
-    var hits = rayc.intersectObject(world, true);
+    rayc.far = 60;
+    var hits = rayc.intersectObjects(set, false);
     if (hits.length) return hits[0].point.y;
   }
   return groundY(x, z);
 }
+// hard snap: spawn/respawn never bury Kael (ray from well above, long reach)
+function snapToGround(){
+  var set = solidSet();
+  if (set.length) {
+    rayc.set(new THREE.Vector3(kaelPos.x, kaelPos.y + 40, kaelPos.z), rayDir);
+    rayc.far = 120;
+    var hits = rayc.intersectObjects(set, false);
+    if (hits.length) { kaelPos.y = hits[0].point.y; player.gYs = kaelPos.y; player.vy = 0; return; }
+  }
+  kaelPos.y = groundY(kaelPos.x, kaelPos.z); player.gYs = kaelPos.y; player.vy = 0;
+}
 var vignette = document.getElementById('vignette'), vig = 0;
 function hurt(dmg){
-  if (!player.alive) return;
+  if (!player.alive || player.iframes > 0) return;   // i-frames: no contact multihit
   player.hp -= dmg; setHP(player.hp); window.SFX.hurt();
+  player.iframes = 0.7;
   vig = Math.min(1, vig + 0.55);
+  if (player.hp <= 0) window.SFX.sweep(true);   // death: muffled world
   if (player.hp <= 0) {
     player.alive = false;
     toast('Kael falls. The blood takes him home… (tap to rise at the gate)', 6000);
     setTimeout(function(){
       kaelPos.set(0, 0, 168); kaelYaw = Math.PI;
-      player.hp = 100; setHP(100); player.alive = true;
+      snapToGround();
+      window.SFX.sweep(false);
+      player.hp = 100; setHP(100); player.alive = true; player.iframes = 2;
       toast('Kael rises at the south gate.');
     }, 3200);
   }
@@ -533,9 +636,13 @@ function tick(){
     kaelPos.y += player.vy*dt;
     if (kaelPos.y <= gy) {
       if (!player.grounded && player.vy < -12) {
-        window.SFX.hit(); if (K) { K.landDip = 1; K.root.scale.set(1.12, 0.86, 1.12); }  // squash
+        window.SFX.hit(); if (K) { K.landDip = 1; K.root.scale.set(1.12, 0.86, 1.12); }
         spawnPuff(kaelPos.x, gy, kaelPos.z, true);
       }
+      kaelPos.y = gy; player.vy = 0; player.grounded = true;
+    } else if (kaelPos.y > gy + 0.05) {
+      player.grounded = false;
+    }
       kaelPos.y = gy; player.vy = 0; player.grounded = true;
     } else if (kaelPos.y > gy + 0.05) {
       player.grounded = false;
@@ -544,6 +651,7 @@ function tick(){
       var s = K.root.scale;
       s.x += (1-s.x)*Math.min(1,dt*8); s.y += (1-s.y)*Math.min(1,dt*8); s.z += (1-s.z)*Math.min(1,dt*8);
     }
+    if (!tick._snapped && world) { tick._snapped = true; snapToGround(); }
     K.root.position.set(kaelPos.x, kaelPos.y, kaelPos.z);
     K.root.rotation.y = kaelYaw;
     var atk = false;
@@ -563,12 +671,15 @@ function tick(){
     tx += Math.cos(yaw)*0.9; tz += -Math.sin(yaw)*0.9;       // shoulder offset
     var dx = -fx*Math.cos(pitch), dz = -fz*Math.cos(pitch), dy = -Math.sin(pitch);
     var dl = Math.hypot(dx, dy, dz); dx/=dl; dy/=dl; dz/=dl;
-    tick._cc = ((tick._cc || 0) + 1) % 3;                    // collision ray, every 3rd frame
-    if (world && tick._cc === 0) {
-      rayc.set(new THREE.Vector3(tx, ty, tz), new THREE.Vector3(dx, dy, dz));
-      rayc.far = CAMD + 1;
-      var hits = rayc.intersectObject(world, true);
-      tick._cd = hits.length ? Math.max(2.2, hits[0].distance - 0.6) : CAMD;
+    tick._cc = ((tick._cc || 0) + 1) % 2;                    // collision ray, every 2nd frame
+    if (tick._cc === 0) {
+      var cset = solidSet();
+      if (cset.length) {
+        rayc.set(new THREE.Vector3(tx, ty, tz), new THREE.Vector3(dx, dy, dz));
+        rayc.far = CAMD + 1;
+        var hits = rayc.intersectObjects(cset, false);     // solid only: never blinded by blood/glow
+        tick._cd = hits.length ? Math.max(1.4, hits[0].distance - 0.5) : CAMD;
+      }
     }
     var wantD = (tick._cd || CAMD);
     // GTA rule: snap IN fast (never show wall interiors), drift OUT slow (no jitter)
@@ -590,6 +701,10 @@ function tick(){
   perfTick(dt);
   if (debugOn) updateDebug();
   if (bloodTex) { bloodTex.offset.x += dt*0.025; bloodTex.offset.y += dt*0.011; }
+  if (player.iframes > 0) {   // blink through invulnerability
+    player.iframes -= dt;
+    if (K) K.root.visible = (Math.floor(performance.now()/90) % 2 === 0) || player.iframes <= 0;
+  } else if (K && !K.root.visible) K.root.visible = true;
   var lowHP = (player.hp < 35 && player.alive) ? (0.35 + Math.sin(performance.now()*0.006)*0.2) : 0;
   vig = Math.max(lowHP, vig - dt*1.4);
   vignette.style.opacity = vig.toFixed(2);
@@ -605,7 +720,12 @@ function tick(){
     var sc = dm.sp.scale.x + dt * 2.2;
     dm.sp.scale.set(sc, sc, 1);
   }
-  if (marker && marker.visible) marker.material.opacity = 0.24 + Math.sin(performance.now()*0.004)*0.12;
+  if (marker && marker.visible) {
+    var mp = performance.now()*0.004;
+    marker.userData.ring.rotation.z += dt*1.4;
+    marker.userData.chev.position.y = 21 + Math.sin(mp*1.6)*1.6;
+    marker.children[0].material.opacity = 0.2 + Math.sin(mp)*0.1;
+  }
   renderer.render(scene, camera);
 }
 
@@ -650,7 +770,7 @@ window.VEYL = {
   getKaelYaw: function(){ return kaelYaw; },
   groundY: groundY, toast: toast, setObjective: setObjective, showAct: showAct,
   startConvo: startConvo, hurt: hurt, setHP: setHP, logStep: logStep, setMarker: setMarker,
-  fx: function(x, y, z, big){ spawnPuff(x, y, z, big); },
+  fx: function(x, y, z, big){ spawnPuff(x, y, z, big); if (!big) window.SFX.step(x, z); },
   isBusy: function(){ return !!convo; }
 };
 window.VEYL_ONREADY = null; window.VEYL_INTERACT = null; window.VEYL_SWING = null;

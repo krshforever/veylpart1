@@ -345,7 +345,7 @@ window.VEYL_SWING = function(){
       var dx = e.obj.position.x - kp.x, dz = e.obj.position.z - kp.z;
       var dist = Math.hypot(dx, dz);
       if (dist < 4.2 && (dx*fx + dz*fz) > 0.5) {
-        e.hp -= dmg; hitAny = true; window.SFX.hit();
+        e.hp -= dmg; hitAny = true; window.SFX.hit(); window.SFX.clash();
         e.obj.position.x += fx*0.8; e.obj.position.z += fz*0.8;
         if (e.hp <= 0) kill(e);
       }
@@ -353,7 +353,7 @@ window.VEYL_SWING = function(){
   });
   if (!hitAny) { /* swung at air */ }
 };
-var shake = 0;
+var trauma = 0;
 function kill(e){
   e.dead = true; window.SFX.hit();
   if (e.scout) { drenDeath(); return; }                       // tutorial kill -> Dren falls
@@ -458,9 +458,13 @@ function loop(){
     V.toast('The hall exhales. Husks rise from the pews of bone.', 3500);
   }
 
-  // enemies
-  [ {list: Q.drones, spd: 5.5, rng: 3.2, dmg: 10, fly: true},
-    {list: Q.husks, spd: 3.2, rng: 2.8, dmg: 14, fly: false} ].forEach(function(cfg){
+  // enemies: flank slots + separation (no stacking), wind-up telegraphs, lunges
+  var all = Q.drones.concat(Q.husks).filter(function(e){ return !e.dead; });
+  all.forEach(function(e, i){
+    e.slot = (i % 5) * (Math.PI*2/5);
+  });
+  [ {list: Q.drones, spd: 5.5, rng: 3.4, dmg: 10, fly: true},
+    {list: Q.husks, spd: 3.2, rng: 3.0, dmg: 14, fly: false} ].forEach(function(cfg){
     cfg.list.forEach(function(e){
       if (e.dead) {
         e.obj.position.y -= dt*2; e.obj.rotation.z += dt*1.5;   // crumple
@@ -468,36 +472,72 @@ function loop(){
           V.scene.remove(e.obj);
         return;
       }
-      var dx = kp.x - e.obj.position.x, dz = kp.z - e.obj.position.z;
-      var dist = Math.hypot(dx, dz);
+      // separation: never merge into a blob
+      all.forEach(function(o){
+        if (o === e || o.dead) return;
+        var sx = e.obj.position.x - o.obj.position.x, sz = e.obj.position.z - o.obj.position.z;
+        var sd = Math.hypot(sx, sz);
+        if (sd < 2.4 && sd > 0.01) {
+          e.obj.position.x += sx/sd*(2.4-sd)*dt*4;
+          e.obj.position.z += sz/sd*(2.4-sd)*dt*4;
+        }
+      });
+      // flank slot around the player instead of one shared point
+      var fx = kp.x + Math.cos(e.slot || 0)*3.4, fz = kp.z + Math.sin(e.slot || 0)*3.4;
+      var dx = fx - e.obj.position.x, dz = fz - e.obj.position.z;
+      var dist = Math.hypot(kp.x - e.obj.position.x, kp.z - e.obj.position.z);
       var gy = V.groundY(e.obj.position.x, e.obj.position.z);
       if (e.mixer) e.mixer.update(dt);
+      e.windup = e.windup || 0;
+      e.atkCD -= dt;
       if (dist < 26) {
         var px = e.obj.position.x;
-        e.obj.position.x += dx/dist*cfg.spd*dt;
-        e.obj.position.z += dz/dist*cfg.spd*dt;
+        if (e.windup > 0) {
+          // WIND-UP: hold still, flare — the tell before the strike
+          e.windup -= dt;
+          var w = 1 + Math.max(0, e.windup)*0.5;
+          e.obj.scale.set(w, w, w);
+          if (e.windup <= 0) {
+            e.obj.scale.set(1, 1, 1);
+            if (dist < cfg.rng + 1.2 && V.player.alive && !V.isBusy()) {
+              e.atkCD = 1.9; V.hurt(cfg.dmg); trauma = Math.min(1, trauma + 0.5);
+              e.obj.position.x += dx/Math.max(dist, 0.1)*1.2;   // lunge step
+              e.obj.position.z += dz/Math.max(dist, 0.1)*1.2;
+            }
+          }
+        } else {
+          e.obj.position.x += dx/dist*cfg.spd*dt;
+          e.obj.position.z += dz/dist*cfg.spd*dt;
+          if (dist < cfg.rng + 1.6 && e.atkCD <= 0 && V.player.alive && !V.isBusy()) e.windup = 0.7;
+        }
         var wantYaw = Math.atan2(dx, dz), dy = wantYaw - e.obj.rotation.y;
         while (dy > Math.PI) dy -= 2*Math.PI; while (dy < -Math.PI) dy += 2*Math.PI;
         e.obj.rotation.y += dy * Math.min(1, dt*6);
         e.obj.rotation.z += ((-(e.obj.position.x - px)/Math.max(dt, 0.001))*0.06 - e.obj.rotation.z) * Math.min(1, dt*5); // bank
         if (cfg.fly) e.obj.position.y = gy + 2.2 + Math.sin(t*3+e.seed)*0.4 - Math.min(1, dist/10)*0.8; // swoop low near prey
         else { e.obj.position.y = gy + Math.abs(Math.sin(t*5+e.seed))*0.22; }
-        e.atkCD -= dt;
-        if (dist < cfg.rng && e.atkCD <= 0 && V.player.alive && !V.isBusy()) {
-          e.atkCD = 1.6; V.hurt(cfg.dmg); shake = 0.35;
-        }
       } else {
-        // drift home + idle
         if (cfg.fly) e.obj.position.y = gy + 2.2 + Math.sin(t*2+e.seed)*0.5;
       }
       if (e.wL) { e.wL.rotation.y = Math.sin(t*30)*0.5; e.wR.rotation.y = -Math.sin(t*30)*0.5; }
     });
   });
 
-  if (shake > 0) {
-    shake -= dt;
-    V.camera.position.x += (Math.random()-0.5)*shake;
-    V.camera.position.y += (Math.random()-0.5)*shake;
+  // hive hum: nearest live drone drives the low pulse
+  var humD = 1e9;
+  Q.drones.forEach(function(e){
+    if (e.dead) return;
+    var hd = Math.hypot(kp.x - e.obj.position.x, kp.z - e.obj.position.z);
+    if (hd < humD) humD = hd;
+  });
+  window.SFX.hum(humD > 40 ? 0 : 0.16 * (1 - humD/40));
+
+  // trauma shake: rotational roll that decays (never raw translational jitter)
+  if (trauma > 0) {
+    trauma = Math.max(0, trauma - dt*2);
+    V.camera.rotation.z += (Math.random()-0.5) * trauma * 0.06;
+    V.camera.position.x += (Math.random()-0.5) * trauma * 0.25;
+    V.camera.position.y += (Math.random()-0.5) * trauma * 0.25;
   }
 }
 loop();

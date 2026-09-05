@@ -85,7 +85,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
   width:min(640px,92vw);z-index:30;background:var(--panel);border:1px solid #5c0a10;border-top:2px solid var(--blood);
   border-radius:6px;padding:14px 18px 12px;backdrop-filter:blur(8px);cursor:pointer}
 #dlg-name{font-size:12px;letter-spacing:.3em;color:var(--ember);margin-bottom:6px}
-#dlg-text{font-size:17px;line-height:1.55;min-height:52px}
+#dlg-text{font-size:17px;line-height:1.55;min-height:52px;white-space:normal;
+  overflow-wrap:break-word;word-break:break-word;max-width:100%}
 #dlg-hint{text-align:right;font-size:11px;color:#8a6f52;margin-top:6px}
 #dlg-choices{display:flex;gap:10px;margin-top:10px}
 #dlg-choices button{flex:1;background:#2a0306;border:1px solid var(--blood);color:var(--bone);
