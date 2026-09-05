@@ -11,7 +11,23 @@ var renderer;
 try {
   renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: 'high-performance' });
 } catch(e){ prog('WebGL blocked: '+e.message); return; }
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+var IS_TOUCH = ('ontouchstart' in window);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, IS_TOUCH ? 1.5 : 2));
+// auto-quality governor: thermal throttle shows up as trembling. Shed load to hold fps.
+var perfQ = { acc: 0, n: 0, low: 0, level: 0 };
+function perfTick(dt){
+  perfQ.acc += dt; perfQ.n++;
+  if (perfQ.acc >= 2) {
+    var fps = perfQ.n / perfQ.acc;
+    perfQ.acc = 0; perfQ.n = 0;
+    perfQ.fps = fps;
+    if (fps < 24 && perfQ.level < 2) {
+      perfQ.level++;
+      if (perfQ.level === 1) { renderer.setPixelRatio(1); scene.fog.density = 0.004; }
+      if (perfQ.level === 2) { scene.fog.density = 0.0055; perfQ.noDust = true; }
+    }
+  }
+}
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputEncoding = THREE.sRGBEncoding;
 
@@ -38,6 +54,7 @@ var dustTex = (function(){
 })();
 var dusts = [];
 function spawnPuff(x, y, z, big){
+  if (perfQ.level >= 2 && !big) return;   // thermal shed: skip footstep dust
   var m;
   for (var i = 0; i < dusts.length; i++) if (!dusts[i].on) { m = dusts[i]; break; }
   if (!m) {
@@ -570,6 +587,8 @@ function tick(){
     }
   }
   ember.intensity = 1.0 + Math.sin(performance.now()*0.0021)*0.18;
+  perfTick(dt);
+  if (debugOn) updateDebug();
   if (bloodTex) { bloodTex.offset.x += dt*0.025; bloodTex.offset.y += dt*0.011; }
   var lowHP = (player.hp < 35 && player.alive) ? (0.35 + Math.sin(performance.now()*0.006)*0.2) : 0;
   vig = Math.max(lowHP, vig - dt*1.4);
@@ -589,6 +608,40 @@ function tick(){
   if (marker && marker.visible) marker.material.opacity = 0.24 + Math.sin(performance.now()*0.004)*0.12;
   renderer.render(scene, camera);
 }
+
+// ---------- debug overlay (?debug=1): fps, state, one-tap report ----------
+var debugOn = /[?&]debug=1/.test(window.location.search);
+var debugEl = document.getElementById('debug');
+if (debugOn) debugEl.classList.remove('hidden');
+var dbgWorst = 0;
+function updateDebug(){
+  var info = renderer.info.render;
+  var lines = [
+    'fps ' + (perfQ.fps ? perfQ.fps.toFixed(0) : '?') + '  q' + perfQ.level +
+    '  calls ' + info.calls + '  tris ' + (info.triangles/1000).toFixed(0) + 'k',
+    'kael ' + kaelPos.x.toFixed(1) + ',' + kaelPos.y.toFixed(1) + ',' + kaelPos.z.toFixed(1) +
+    (player.grounded ? ' GND' : ' AIR') + ' vy' + player.vy.toFixed(1),
+    'cam d' + camDist.toFixed(1) + ' yaw' + yaw.toFixed(2) + ' pitch' + pitch.toFixed(2),
+    'knight ' + (K ? (K.ready ? 'RIG' : (K.failMsg || 'loading...')) : 'none'),
+    'hp ' + Math.round(player.hp) + ' act ' + ((window.VEYL_QUEST && window.VEYL_QUEST.act) || 0)
+  ];
+  debugEl.textContent = lines.join('\n') + '\n[tap to copy report]';
+}
+if (debugEl) debugEl.addEventListener('click', function(){
+  var t = debugEl.textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t);
+});
+// triple-tap top-left toggles debug without URL param
+(function(){
+  var taps = 0, lt = 0;
+  document.addEventListener('pointerdown', function(e){
+    if (e.clientX > 120 || e.clientY > 120) return;
+    var n = performance.now();
+    if (n - lt > 600) taps = 0;
+    lt = n; taps++;
+    if (taps >= 3) { taps = 0; debugOn = !debugOn; debugEl.classList.toggle('hidden', !debugOn); }
+  });
+})();
 
 // public API for actors.js
 window.VEYL = {
