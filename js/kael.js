@@ -48,8 +48,23 @@ function buildKnight(){
         var idle = g.animations.find(function(a){ return /idle/i.test(a.name); }) || g.animations[0];
         K.mixer.clipAction(idle).play();
       }
-      // arm bone for attack override
-      model.traverse(function(o){ if (o.name === 'R_arm_039') K.armR = o; });
+      // bones for procedural walk + attack override (post-mixer, every frame wins)
+      K.bones = {};
+      model.traverse(function(o){
+        if (/^(L_leg_02|R_leg_07|L_knee_03|R_knee_08|L_arm_015|R_arm_039|R_shoulder_038|spine_012|hips_01)$/.test(o.name)) {
+          K.bones[o.name] = o;
+          o.userData.bx = o.rotation.x; o.userData.bz = o.rotation.z;
+        }
+      });
+      K.armR = K.bones['R_arm_039'] || null;
+      // ember blade in right hand (maul stays sheathed on the back)
+      if (K.armR) {
+        var blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.5, 0.16),
+          new THREE.MeshLambertMaterial({ color: 0xb9c2cc, emissive: 0xff5a14 }));
+        blade.position.set(0, -1.15, 0.25);
+        K.armR.add(blade);
+        K.blade = blade;
+      }
       K.ready = true;
     },
     undefined,
@@ -63,21 +78,36 @@ function buildKnight(){
 
 function animate(K, moveAmt, dt, attacking){
   if (K.mixer) K.mixer.update(dt);
-  if (attacking && K.atkT < 0) { K.atkT = 0; }
-  if (K.atkT >= 0 && K.armR) {
+  if (attacking && K.atkT < 0) { K.atkT = 0; window.SFX && window.SFX.swing(); }
+  var B = K.bones || {}, sw = 0;
+  if (K.atkT >= 0) {
     K.atkT += dt;
-    var t = Math.min(K.atkT / 0.45, 1), sw = Math.sin(t*Math.PI);
-    K.armR.rotation.x = K.armR.userData.bx !== undefined ? K.armR.userData.bx : (K.armR.userData.bx = K.armR.rotation.x);
-    K.armR.rotation.x = K.armR.userData.bx - 1.9*sw;
-    if (t >= 1) { K.armR.rotation.x = K.armR.userData.bx; K.atkT = -1; }
-  } else if (K.atkT >= 0) {
-    K.atkT += dt; if (K.atkT >= 0.45) K.atkT = -1;
+    var t = Math.min(K.atkT / 0.5, 1);
+    sw = Math.sin(t*Math.PI);
+    if (B['R_arm_039']) B['R_arm_039'].rotation.x = B['R_arm_039'].userData.bx - 2.4*sw;
+    if (B['R_shoulder_038']) B['R_shoulder_038'].rotation.z = B['R_shoulder_038'].userData.bz + 0.5*sw;
+    if (B['spine_012']) B['spine_012'].rotation.y = -0.55*sw;
+    if (t >= 1) {
+      if (B['R_arm_039']) B['R_arm_039'].rotation.x = B['R_arm_039'].userData.bx;
+      if (B['R_shoulder_038']) B['R_shoulder_038'].rotation.z = B['R_shoulder_038'].userData.bz;
+      if (B['spine_012']) B['spine_012'].rotation.y = 0;
+      K.atkT = -1; sw = 0;
+    }
   }
-  // locomotion feel: lean + bob (no walk clip on this rig)
-  K.phase += dt * (3 + moveAmt*8);
-  var targetLean = moveAmt * 0.14;
-  K.root.rotation.x += ((targetLean) - K.root.rotation.x) * Math.min(1, dt*6);
-  K.root.position.y += Math.abs(Math.sin(K.phase)) * 0.06 * moveAmt;
+  // procedural walk cycle over the idle (legs, knees, off-arm swing)
+  K.phase += dt * (2 + moveAmt*9);
+  var s = Math.sin(K.phase), amp = moveAmt * 0.6;
+  if (B['L_leg_02']) B['L_leg_02'].rotation.x = B['L_leg_02'].userData.bx + s*amp;
+  if (B['R_leg_07']) B['R_leg_07'].rotation.x = B['R_leg_07'].userData.bx - s*amp;
+  if (B['L_knee_03']) B['L_knee_03'].rotation.x = B['L_knee_03'].userData.bx + Math.max(0, -s)*amp*0.9;
+  if (B['R_knee_08']) B['R_knee_08'].rotation.x = B['R_knee_08'].userData.bx + Math.max(0, s)*amp*0.9;
+  if (B['L_arm_015'] && K.atkT < 0) B['L_arm_015'].rotation.x = B['L_arm_015'].userData.bx - s*amp*0.7;
+  if (B['R_arm_039'] && K.atkT < 0) B['R_arm_039'].rotation.x = B['R_arm_039'].userData.bx + s*amp*0.4;
+  if (B['spine_012'] && K.atkT < 0) B['spine_012'].rotation.x = moveAmt*0.1;
+  if (B['hips_01']) B['hips_01'].rotation.y = s*amp*0.12;
+  var targetLean = moveAmt * 0.1;
+  K.root.rotation.x += (targetLean - K.root.rotation.x) * Math.min(1, dt*6);
+  K.root.position.y += Math.abs(Math.cos(K.phase)) * 0.09 * moveAmt;
 }
 
 window.KAEL = { build: buildKnight, animate: animate };

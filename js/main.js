@@ -390,7 +390,7 @@ function tick(){
     K.root.rotation.y = kaelYaw;
     var atk = false;
     if (player.wantAttack && player.attackCD <= 0 && !busy) {
-      atk = true; player.attackCD = 0.5; window.SFX.swing();
+      atk = true; player.attackCD = 0.5;   // swing SFX lives in kael.animate
       if (window.VEYL_SWING) window.VEYL_SWING();
     }
     player.wantAttack = false;
