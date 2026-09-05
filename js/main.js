@@ -643,10 +643,6 @@ function tick(){
     } else if (kaelPos.y > gy + 0.05) {
       player.grounded = false;
     }
-      kaelPos.y = gy; player.vy = 0; player.grounded = true;
-    } else if (kaelPos.y > gy + 0.05) {
-      player.grounded = false;
-    }
     if (K) {  // ease squash/stretch back to normal
       var s = K.root.scale;
       s.x += (1-s.x)*Math.min(1,dt*8); s.y += (1-s.y)*Math.min(1,dt*8); s.z += (1-s.z)*Math.min(1,dt*8);
