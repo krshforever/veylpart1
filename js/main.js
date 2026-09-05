@@ -31,6 +31,7 @@ var yaw = Math.PI, pitch = 0.12, CAMD = 9;   // orbit behind Kael
 var AudioSys = { ctx: null };
 function initAudio(){
   var a = document.createElement('audio');
+  AudioSys.el = a;
   a.loop = true; a.volume = 0.55; a.preload = 'auto';
   var s1 = document.createElement('source'); s1.src = 'audio/ambience.mp3?v=2'; s1.type = 'audio/mpeg';
   var s2 = document.createElement('source'); s2.src = 'audio/ambience.ogg?v=2'; s2.type = 'audio/ogg';
@@ -306,7 +307,19 @@ touchBtn('btn-atk', function(){ player.wantAttack = true; });
 touchBtn('btn-jump', function(){ player.wantJump = true; });
 
 // ---------- loop ----------
-var started = false, clock = new THREE.Clock();
+var started = false, paused = false, clock = new THREE.Clock();
+window.VEYL_PAUSED = function(){ return paused; };
+function setPaused(p){
+  paused = p;
+  document.getElementById('paused').classList.toggle('hidden', !p);
+  document.getElementById('pause-btn').textContent = p ? '▶' : '⏸';
+  if (AudioSys.el) { try { p ? AudioSys.el.pause() : AudioSys.el.play(); } catch(e){} }
+  clock.getDelta();
+}
+document.getElementById('pause-btn').addEventListener('click', function(){ if (started) setPaused(!paused); });
+document.getElementById('resume-btn').addEventListener('click', function(){ setPaused(false); });
+document.getElementById('restart-btn').addEventListener('click', function(){ window.location.reload(); });
+window.addEventListener('keydown', function(e){ if (e.code === 'KeyP' && started) setPaused(!paused); });
 function goFullscreen(){
   try {
     var el = document.documentElement;
@@ -333,6 +346,7 @@ var mvX = 0, mvZ = 0;
 function tick(){
   requestAnimationFrame(tick);
   var dt = Math.min(clock.getDelta(), 0.05);
+  if (paused) { renderer.render(scene, camera); return; }
   if (started && K && player.alive) {
     var busy = !!convo;
     mvX = mvZ = 0;

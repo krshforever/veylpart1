@@ -270,6 +270,7 @@ function loop(){
   var now = performance.now();
   var dt = Math.min((now - clock2.last)/1000, 0.05);
   clock2.last = now;
+  if (window.VEYL_PAUSED && window.VEYL_PAUSED()) return;
   var kp = V.kaelPos, t = now/1000;
 
   npcs.forEach(function(n){
