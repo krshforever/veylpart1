@@ -289,16 +289,15 @@ window.addEventListener('keydown', function(e){
   if (e.code === 'KeyE') { if (convo) advanceConvo(); else if (window.VEYL_INTERACT) window.VEYL_INTERACT(); }
   if (e.code === 'KeyF') player.wantAttack = true;
   if (e.code === 'Space') { player.wantJump = true; player.jumpHeld = true; }
+  if (['ArrowUp','ArrowDown','Space'].indexOf(e.code) >= 0) e.preventDefault();
 });
 window.addEventListener('keyup', function(e){
+  keys[e.code] = false;
   if (e.code === 'Space') {
     player.jumpHeld = false;
     if (player.vy > 3) player.vy *= 0.45;   // variable jump: release cuts rise
   }
 });
-  if (['ArrowUp','ArrowDown','Space'].indexOf(e.code) >= 0) e.preventDefault();
-});
-window.addEventListener('keyup', function(e){ keys[e.code] = false; });
 var dragging = false, lx = 0, ly = 0, downT = 0;
 canvas.addEventListener('pointerdown', function(e){ dragging = true; lx = e.clientX; ly = e.clientY; downT = performance.now(); });
 window.addEventListener('pointerup', function(e){
