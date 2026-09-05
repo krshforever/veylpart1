@@ -58,21 +58,6 @@ function buildNPC(opts){
   } else addProps(g, opts, 1.8);
   return rec;
 }
-      var s = spec.h / (size.y || 1);
-      model.scale.setScalar(s);
-      bb.setFromObject(model);
-      model.position.sub(new THREE.Vector3((bb.min.x+bb.max.x)/2, bb.min.y, (bb.min.z+bb.max.z)/2));
-      g.add(model);
-      rec.model = model;
-      if (r.animations && r.animations.length) {
-        rec.mixer = new THREE.AnimationMixer(model);
-        rec.mixer.clipAction(r.animations[0]).play();
-      }
-      addProps(g, opts, spec.h);
-    }, undefined, function(){ addProps(g, opts, 1.8); });
-  } else addProps(g, opts, 1.8);
-  return rec;
-}
 function addProps(g, opts, h){
   if (opts.spear) { // Dren's gate-spear
     g.add(box(0.09, 3.0, 0.09, mat(0x3a2a1a), 0.62, 1.5, 0));
