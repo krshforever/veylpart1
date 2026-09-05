@@ -51,7 +51,7 @@ function buildKnight(){
       // bones for procedural walk + attack override (post-mixer, every frame wins)
       K.bones = {};
       model.traverse(function(o){
-        if (/^(L_leg_02|R_leg_07|L_knee_03|R_knee_08|L_arm_015|R_arm_039|R_shoulder_038|spine_012|hips_01)$/.test(o.name)) {
+        if (/^(L_leg_02|R_leg_07|L_knee_03|R_knee_08|L_foot_05|R_foot_010|L_arm_015|R_arm_039|R_shoulder_038|spine_012|hips_01)$/.test(o.name)) {
           K.bones[o.name] = o;
           o.userData.bx = o.rotation.x; o.userData.bz = o.rotation.z;
         }
@@ -129,6 +129,14 @@ function animate(K, moveAmt, dt, attacking, airborne){
   if (B['R_leg_07']) B['R_leg_07'].rotation.x = B['R_leg_07'].userData.bx - s*amp;
   if (B['L_knee_03']) B['L_knee_03'].rotation.x = B['L_knee_03'].userData.bx + Math.max(0, -s)*amp*1.1;
   if (B['R_knee_08']) B['R_knee_08'].rotation.x = B['R_knee_08'].userData.bx + Math.max(0, s)*amp*1.1;
+  if (B['L_foot_05']) B['L_foot_05'].rotation.x = B['L_foot_05'].userData.bx + Math.max(0, s)*amp*0.8 - amp*0.25;   // toe-off / heel-strike
+  if (B['R_foot_010']) B['R_foot_010'].rotation.x = B['R_foot_010'].userData.bx + Math.max(0, -s)*amp*0.8 - amp*0.25;
+  // foot-plant dust: fire on stride zero-crossing while moving on ground
+  var prevS = K._ps === undefined ? s : K._ps; K._ps = s;
+  if (!airborne && spd > 0.35 && ((prevS > 0) !== (s > 0)) && window.VEYL && window.VEYL.fx) {
+    var kp = window.VEYL.kaelPos;
+    window.VEYL.fx(kp.x, kp.y, kp.z, false);
+  }
   if (B['L_arm_015'] && K.atkT < 0) B['L_arm_015'].rotation.x = B['L_arm_015'].userData.bx - s*amp*0.7;
   if (B['R_arm_039'] && K.atkT < 0) B['R_arm_039'].rotation.x = B['R_arm_039'].userData.bx + s*amp*0.4;
   // sword tracks the forearm (shoulder->arm axis, extended past the hand)

@@ -26,6 +26,30 @@ ember.position.set(0, 40, 40); scene.add(ember);
 
 var camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.5, 2500);
 var yaw = Math.PI, pitch = 0.12, CAMD = 9;   // orbit behind Kael
+var camPos = new THREE.Vector3(0, 14, 200), camDist = CAMD, camFov = 62;
+// dust pool (billboard sprites)
+var dustTex = (function(){
+  var c = document.createElement('canvas'); c.width = c.height = 64;
+  var x = c.getContext('2d');
+  var g = x.createRadialGradient(32, 32, 2, 32, 32, 30);
+  g.addColorStop(0, 'rgba(200,120,80,0.55)'); g.addColorStop(1, 'rgba(200,120,80,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+var dusts = [];
+function spawnPuff(x, y, z, big){
+  var m;
+  for (var i = 0; i < dusts.length; i++) if (!dusts[i].on) { m = dusts[i]; break; }
+  if (!m) {
+    if (dusts.length >= 26) return;
+    m = { sp: new THREE.Sprite(new THREE.SpriteMaterial({ map: dustTex, transparent: true, depthWrite: false })), on: false, life: 0 };
+    scene.add(m.sp); dusts.push(m);
+  }
+  m.on = true; m.life = big ? 0.7 : 0.45;
+  m.max = m.life; m.sp.position.set(x, y + 0.3, z);
+  m.sp.scale.set(big ? 2.2 : 1.2, big ? 2.2 : 1.2, 1);
+  m.sp.material.opacity = 0.6;
+}
 
 // ---------- audio: licensed loop + synth SFX ----------
 var AudioSys = { ctx: null };
@@ -222,7 +246,8 @@ function setMarker(x, z){
 
 // ---------- player state (real physics) ----------
 var player = { hp: 100, alive: true, attackCD: 0, moveAmt: 0, wantAttack: false,
-               vy: 0, grounded: true, wantJump: false };
+               vy: 0, grounded: true, wantJump: false,
+               coyote: 0, buffer: 0, jumpHeld: false };
 function collide(nx, nz){
   var r = 0.7;
   for (var i = 0; i < colliders.length; i++) {
@@ -263,7 +288,14 @@ window.addEventListener('keydown', function(e){
   keys[e.code] = true;
   if (e.code === 'KeyE') { if (convo) advanceConvo(); else if (window.VEYL_INTERACT) window.VEYL_INTERACT(); }
   if (e.code === 'KeyF') player.wantAttack = true;
-  if (e.code === 'Space') player.wantJump = true;
+  if (e.code === 'Space') { player.wantJump = true; player.jumpHeld = true; }
+});
+window.addEventListener('keyup', function(e){
+  if (e.code === 'Space') {
+    player.jumpHeld = false;
+    if (player.vy > 3) player.vy *= 0.45;   // variable jump: release cuts rise
+  }
+});
   if (['ArrowUp','ArrowDown','Space'].indexOf(e.code) >= 0) e.preventDefault();
 });
 window.addEventListener('keyup', function(e){ keys[e.code] = false; });
@@ -304,7 +336,8 @@ touchBtn('btn-act', function(){
   if (convo) advanceConvo(); else if (window.VEYL_INTERACT) window.VEYL_INTERACT();
 });
 touchBtn('btn-atk', function(){ player.wantAttack = true; });
-touchBtn('btn-jump', function(){ player.wantJump = true; });
+touchBtn('btn-jump', function(){ player.wantJump = true; player.jumpHeld = true;
+  setTimeout(function(){ player.jumpHeld = false; if (player.vy > 3) player.vy *= 0.45; }, 180); });
 
 // ---------- loop ----------
 var started = false, paused = false, clock = new THREE.Clock();
@@ -374,17 +407,32 @@ function tick(){
       while (d > Math.PI) d -= 2*Math.PI; while (d < -Math.PI) d += 2*Math.PI;
       kaelYaw += d * Math.min(1, dt*10);
     }
-    // gravity + jump + ground
+    // gravity + jump: coyote, buffer, variable height, heavy fall, apex hang
     var gy = sampleGround(kaelPos.x, kaelPos.z);
-    if (player.wantJump && player.grounded) { player.vy = 8.5; player.grounded = false; }
+    if (player.grounded) player.coyote = 0.1; else player.coyote = Math.max(0, player.coyote - dt);
+    if (player.wantJump) player.buffer = 0.14;
+    else player.buffer = Math.max(0, player.buffer - dt);
     player.wantJump = false;
-    player.vy -= 26*dt;
+    if (player.buffer > 0 && player.coyote > 0) {
+      player.vy = 9; player.grounded = false; player.coyote = 0; player.buffer = 0;
+      if (K) K.root.scale.set(0.92, 1.08, 0.92);   // stretch on takeoff
+    }
+    var grav = player.vy > 0 ? (Math.abs(player.vy) < 2 ? 13 : 26) : 42;  // apex hang + heavy fall
+    player.vy -= grav*dt;
+    if (player.vy < -30) player.vy = -30;
     kaelPos.y += player.vy*dt;
     if (kaelPos.y <= gy) {
-      if (!player.grounded && player.vy < -12) { window.SFX.hit(); if (K) K.landDip = 1; }
+      if (!player.grounded && player.vy < -12) {
+        window.SFX.hit(); if (K) { K.landDip = 1; K.root.scale.set(1.12, 0.86, 1.12); }  // squash
+        spawnPuff(kaelPos.x, gy, kaelPos.z, true);
+      }
       kaelPos.y = gy; player.vy = 0; player.grounded = true;
     } else if (kaelPos.y > gy + 0.05) {
       player.grounded = false;
+    }
+    if (K) {  // ease squash/stretch back to normal
+      var s = K.root.scale;
+      s.x += (1-s.x)*Math.min(1,dt*8); s.y += (1-s.y)*Math.min(1,dt*8); s.z += (1-s.z)*Math.min(1,dt*8);
     }
     K.root.position.set(kaelPos.x, kaelPos.y, kaelPos.z);
     K.root.rotation.y = kaelYaw;
@@ -396,16 +444,50 @@ function tick(){
     player.wantAttack = false;
     player.attackCD = Math.max(0, player.attackCD - dt);
     window.KAEL.animate(K, amt, dt, atk, !player.grounded);
-    // follow camera
-    var tx = kaelPos.x, ty = kaelPos.y + 2.6, tz = kaelPos.z;
-    var cx = tx + Math.sin(yaw)*Math.cos(pitch)*CAMD;
-    var cz = tz + Math.cos(yaw)*Math.cos(pitch)*CAMD;
-    var cy = ty + Math.sin(pitch)*CAMD;
-    camera.position.set(cx, Math.max(1.6, cy), cz);
+    // camera rig: damped follow + shoulder offset + look-ahead + collision + FOV kick
+    var fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    var vx = (kaelPos.x - (tick._px === undefined ? kaelPos.x : tick._px))/Math.max(dt, 0.001);
+    var vz = (kaelPos.z - (tick._pz === undefined ? kaelPos.z : tick._pz))/Math.max(dt, 0.001);
+    tick._px = kaelPos.x; tick._pz = kaelPos.z;
+    var tx = kaelPos.x + vx*0.18, ty = kaelPos.y + 2.6, tz = kaelPos.z + vz*0.18;  // velocity look-ahead
+    tx += Math.cos(yaw)*0.9; tz += -Math.sin(yaw)*0.9;       // shoulder offset
+    var dx = -fx*Math.cos(pitch), dz = -fz*Math.cos(pitch), dy = -Math.sin(pitch);
+    var dl = Math.hypot(dx, dy, dz); dx/=dl; dy/=dl; dz/=dl;
+    tick._cc = ((tick._cc || 0) + 1) % 3;                    // collision ray, every 3rd frame
+    if (world && tick._cc === 0) {
+      rayc.set(new THREE.Vector3(tx, ty, tz), new THREE.Vector3(dx, dy, dz));
+      rayc.far = CAMD + 1;
+      var hits = rayc.intersectObject(world, true);
+      tick._cd = hits.length ? Math.max(2.2, hits[0].distance - 0.6) : CAMD;
+    }
+    var wantD = (tick._cd || CAMD);
+    camDist += (wantD - camDist) * Math.min(1, dt*10);       // smooth pull, no pops
+    var cx = tx - dx*camDist, cz = tz - dz*camDist, cy = ty - dy*camDist;
+    camPos.x += (cx - camPos.x) * Math.min(1, dt*7);         // damped follow
+    camPos.y += (Math.max(1.6, cy) - camPos.y) * Math.min(1, dt*7);
+    camPos.z += (cz - camPos.z) * Math.min(1, dt*7);
+    camera.position.copy(camPos);
     camera.lookAt(tx, ty, tz);
+    var wantFov = (keys.ShiftLeft || keys.ShiftRight) && amt > 0.3 ? 70 : 62;
+    if (Math.abs(camera.fov - wantFov) > 0.1) {
+      camera.fov += (wantFov - camera.fov) * Math.min(1, dt*4);
+      camera.updateProjectionMatrix();
+    }
   }
   ember.intensity = 1.0 + Math.sin(performance.now()*0.0021)*0.18;
   if (bloodTex) { bloodTex.offset.x += dt*0.025; bloodTex.offset.y += dt*0.011; }
+  for (var di = 0; di < dusts.length; di++) {
+    var dm = dusts[di];
+    if (!dm.on) continue;
+    dm.life -= dt;
+    if (dm.life <= 0) { dm.on = false; dm.sp.visible = false; continue; }
+    dm.sp.visible = true;
+    var f = dm.life / dm.max;
+    dm.sp.material.opacity = 0.6 * f;
+    dm.sp.position.y += dt * 1.4;
+    var sc = dm.sp.scale.x + dt * 2.2;
+    dm.sp.scale.set(sc, sc, 1);
+  }
   if (marker && marker.visible) marker.material.opacity = 0.24 + Math.sin(performance.now()*0.004)*0.12;
   renderer.render(scene, camera);
 }
@@ -417,6 +499,7 @@ window.VEYL = {
   getKaelYaw: function(){ return kaelYaw; },
   groundY: groundY, toast: toast, setObjective: setObjective, showAct: showAct,
   startConvo: startConvo, hurt: hurt, setHP: setHP, logStep: logStep, setMarker: setMarker,
+  fx: function(x, y, z, big){ spawnPuff(x, y, z, big); },
   isBusy: function(){ return !!convo; }
 };
 window.VEYL_ONREADY = null; window.VEYL_INTERACT = null; window.VEYL_SWING = null;
