@@ -17,9 +17,9 @@ function box(w,h,d,m,x,y,z){
 
 /* ---------- NPCs: real Sketchfab bodies (CC-BY, credited) + role props ---------- */
 var NPC_MODELS = {
-  dren:  { url: 'models/guard/scene.gltf?v=2', h: 1.95 },   // Castle Guard, rigged+anim
-  sella: { url: 'models/peasant/scene.gltf?v=2', h: 1.65, pickName: 'peasant woman1' },
-  issa:  { url: 'models/priest/scene.gltf?v=2', h: 1.85 }   // Low Poly Priest, rigged
+  dren:  { url: 'models/guard/scene.gltf?v=3', h: 1.95 },   // Castle Guard, rigged+anim
+  sella: { url: 'models/peasant/scene.gltf?v=3', h: 1.65, pickName: 'peasant woman1' },
+  issa:  { url: 'models/priest/scene.gltf?v=3', h: 1.85 }   // Low Poly Priest, rigged
 };
 /* normalize any model: isolate named variant, feet at origin, target height */
 function fitModel(model, spec){
@@ -105,7 +105,7 @@ function buildHusk(x, z){
   V.scene.add(g);
   var rec = { obj: g, hp: 60, atkCD: 0, seed: Math.random()*10, dead: false,
               mixer: null, model: null, home: new THREE.Vector3(x, 0, z) };
-  new THREE.GLTFLoader().load('models/cultist/scene.gltf?v=2', function(r){
+  new THREE.GLTFLoader().load('models/cultist/scene.gltf?v=3', function(r){
     var model = r.scene;
     model.traverse(function(o){ if (/smg/i.test(o.name || '')) o.visible = false; }); // no guns in Veyl
     fitModel(model, { h: 1.9 });
@@ -405,15 +405,17 @@ function loop(){
   npcs.forEach(function(n){
     if (n.mixer) {
       n.mixer.update(dt);                                         // rigged idle
-      // kill root-motion: some clips translate the hips (underground dancing).
-      // lock the hips joint to its base position every frame, keep limb motion.
+      // kill root-motion: some clips translate hips/spine (underground dancing).
+      // lock those joints to base positions every frame, keep limb motion.
       if (!n.hipsLocked && n.model) {
+        n.locks = [];
         n.model.traverse(function(o){
-          if (!n.hips && /hip/i.test(o.name || '') && !/control|pole|goal/i.test(o.name || '')) n.hips = o;
+          if (/hips|spine/i.test(o.name || '') && !/control|pole|goal/i.test(o.name || ''))
+            n.locks.push({ o: o, p: o.position.clone() });
         });
-        if (n.hips) { n.hipsBase = n.hips.position.clone(); n.hipsLocked = true; }
+        if (n.locks.length) n.hipsLocked = true;
       }
-      if (n.hips && n.hipsBase) n.hips.position.copy(n.hipsBase);
+      if (n.locks) for (var li = 0; li < n.locks.length; li++) n.locks[li].o.position.copy(n.locks[li].p);
     }
     else n.obj.position.y = n.baseY + Math.sin(t*1.4 + n.seed)*0.05; // fallback breath
     if (talking === n) {                                          // speaking gesture

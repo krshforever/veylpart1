@@ -59,14 +59,23 @@ function buildKnight(){
       K.armR = K.bones['R_arm_039'] || null;
       // ember blade: follows the forearm every frame (bone-space math breaks
       // across scaled rigs, so track shoulder->arm in world space instead)
-      var sh = K.bones['R_shoulder_038'];
-      if (K.armR && sh) {
-        var blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.6, 0.18),
-          new THREE.MeshLambertMaterial({ color: 0xb9c2cc, emissive: 0xff5a14 }));
-        blade.material.emissiveIntensity = 0.9;
-        K.root.add(blade);
-        K.blade = blade;
-        K._v1 = new THREE.Vector3(); K._v2 = new THREE.Vector3(); K._up = new THREE.Vector3(0, 1, 0);
+      // weapon: take HIS OWN maul (skinned prop in the rig) and seat it in his
+      // fist via attach() — correct scale and skinning for free.
+      if (K.armR) {
+        var maul = null;
+        model.traverse(function(o){ if (!maul && o.name === 'maul') maul = o; });
+        if (maul) {
+          K.armR.updateWorldMatrix(true, false);
+          K.armR.attach(maul);
+          maul.position.set(0, -0.85, 0.3);
+          maul.rotation.set(1.25, 0, 0.15);
+          var edge = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.0, 0.14),
+            new THREE.MeshLambertMaterial({ color: 0xff7b14, emissive: 0xff5a14 }));
+          edge.material.emissiveIntensity = 1;
+          edge.position.set(0, 0.9, 0);
+          maul.add(edge);
+          K.blade = edge;
+        }
       }
       // buckler on left forearm
       var armL = K.bones['L_arm_015'];
@@ -139,21 +148,7 @@ function animate(K, moveAmt, dt, attacking, airborne){
   }
   if (B['L_arm_015'] && K.atkT < 0) B['L_arm_015'].rotation.x = B['L_arm_015'].userData.bx - s*amp*0.7;
   if (B['R_arm_039'] && K.atkT < 0) B['R_arm_039'].rotation.x = B['R_arm_039'].userData.bx + s*amp*0.4;
-  // sword tracks the forearm (shoulder->arm axis, extended past the hand)
-  if (K.blade && B['R_shoulder_038'] && K.armR) {
-    if (!K._qa) { K._qa = new THREE.Quaternion(); K._qb = new THREE.Quaternion(); K._vd = new THREE.Vector3(); K._vp = new THREE.Vector3(); K._vy = new THREE.Vector3(0, 1, 0); }
-    B['R_shoulder_038'].getWorldPosition(K._v1);
-    K.armR.getWorldPosition(K._v2);
-    K._vd.copy(K._v2).sub(K._v1);
-    var armLen = Math.max(K._vd.length(), 0.001);
-    K._vd.normalize();
-    K._vp.copy(K._v2).addScaledVector(K._vd, armLen*0.5 + 0.55);  // blade center, world
-    K.root.worldToLocal(K._vp);
-    K.blade.position.copy(K._vp);
-    K.root.getWorldQuaternion(K._qa).invert();
-    K._qb.setFromUnitVectors(K._vy, K._vd);
-    K.blade.quaternion.copy(K._qa).multiply(K._qb);
-  }
+  // (maul rides the fist via attach — no per-frame tracking needed)
   // landing dip + turn bank live on the hips
   K.landDip = Math.max(0, (K.landDip || 0) - dt*3);
   var targetLean = spd * 0.1 + (K.landDip * 0.35);

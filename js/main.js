@@ -498,7 +498,10 @@ function tick(){
     } else if (K) K.root.rotation.z *= 1 - Math.min(1, dt*6);
     var amt = player.moveAmt;
     // gravity + jump: coyote, buffer, variable height, heavy fall, apex hang
-    var gy = sampleGround(kaelPos.x, kaelPos.z);
+    // smoothed ground (raycast/zone source switches can't pop Kael's feet)
+    player.gYs = (player.gYs === undefined ? sampleGround(kaelPos.x, kaelPos.z)
+      : player.gYs + (sampleGround(kaelPos.x, kaelPos.z) - player.gYs) * Math.min(1, dt*10));
+    var gy = player.gYs;
     if (player.grounded) player.coyote = 0.1; else player.coyote = Math.max(0, player.coyote - dt);
     if (player.wantJump) player.buffer = 0.14;
     else player.buffer = Math.max(0, player.buffer - dt);
@@ -551,7 +554,9 @@ function tick(){
       tick._cd = hits.length ? Math.max(2.2, hits[0].distance - 0.6) : CAMD;
     }
     var wantD = (tick._cd || CAMD);
-    camDist += (wantD - camDist) * Math.min(1, dt*10);       // smooth pull, no pops
+    // GTA rule: snap IN fast (never show wall interiors), drift OUT slow (no jitter)
+    var cRate = wantD < camDist ? 16 : 2.2;
+    camDist += (wantD - camDist) * Math.min(1, dt*cRate);
     var cx = tx - dx*camDist, cz = tz - dz*camDist, cy = ty - dy*camDist;
     camPos.x += (cx - camPos.x) * Math.min(1, dt*7);         // damped follow
     camPos.y += (Math.max(1.6, cy) - camPos.y) * Math.min(1, dt*7);
