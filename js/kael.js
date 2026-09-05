@@ -57,13 +57,16 @@ function buildKnight(){
         }
       });
       K.armR = K.bones['R_arm_039'] || null;
-      // ember blade in right hand (maul stays sheathed on the back)
-      if (K.armR) {
-        var blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.5, 0.16),
+      // ember blade: follows the forearm every frame (bone-space math breaks
+      // across scaled rigs, so track shoulder->arm in world space instead)
+      var sh = K.bones['R_shoulder_038'];
+      if (K.armR && sh) {
+        var blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.6, 0.18),
           new THREE.MeshLambertMaterial({ color: 0xb9c2cc, emissive: 0xff5a14 }));
-        blade.position.set(0, -1.15, 0.25);
-        K.armR.add(blade);
+        blade.material.emissiveIntensity = 0.9;
+        K.root.add(blade);
         K.blade = blade;
+        K._v1 = new THREE.Vector3(); K._v2 = new THREE.Vector3(); K._up = new THREE.Vector3(0, 1, 0);
       }
       // buckler on left forearm
       var armL = K.bones['L_arm_015'];
@@ -89,14 +92,18 @@ function buildKnight(){
 
 function animate(K, moveAmt, dt, attacking, airborne){
   if (K.mixer) K.mixer.update(dt);
-  if (attacking && K.atkT < 0) { K.atkT = 0; K.combo = (K.combo + 1) % 2; window.SFX && window.SFX.swing(); }
+  // smoothed locomotion amount (no snapping between idle/run)
+  K.smooth = (K.smooth === undefined ? moveAmt : K.smooth + (moveAmt - K.smooth) * Math.min(1, dt*7));
+  var sm = K.smooth;
+  if (attacking && K.atkT < 0) { K.atkT = 0; K.combo = ((K.combo || 0) + 1) % 2; window.SFX && window.SFX.swing(); }
   var B = K.bones || {}, sw = 0;
   if (K.atkT >= 0) {
-    // combo: 0 = overhead cleave, 1 = backhand sweep (lunge built in)
+    // combo: 0 = overhead cleave, 1 = backhand sweep (eased in/out)
     K.atkT += dt;
     var alt = (K.combo === 1);
     var t = Math.min(K.atkT / 0.5, 1);
-    sw = Math.sin(t*Math.PI);
+    var te = t*t*(3-2*t);
+    sw = Math.sin(te*Math.PI);
     if (B['R_arm_039']) B['R_arm_039'].rotation.x = B['R_arm_039'].userData.bx - (alt ? 1.4 : 2.4)*sw;
     if (B['R_shoulder_038']) {
       B['R_shoulder_038'].rotation.z = B['R_shoulder_038'].userData.bz + (alt ? -0.9 : 0.5)*sw;
@@ -114,8 +121,8 @@ function animate(K, moveAmt, dt, attacking, airborne){
       K.atkT = -1; sw = 0;
     }
   }
-  // walk: stride matched to speed (less ice-skating), softer when airborne
-  var spd = airborne ? 0 : moveAmt;
+  // walk: stride matched to smoothed speed (less ice-skating), softer when airborne
+  var spd = airborne ? 0 : sm;
   K.phase += dt * (2 + spd*11);
   var s = Math.sin(K.phase), amp = spd * 0.62;
   if (B['L_leg_02']) B['L_leg_02'].rotation.x = B['L_leg_02'].userData.bx + s*amp;
@@ -124,6 +131,21 @@ function animate(K, moveAmt, dt, attacking, airborne){
   if (B['R_knee_08']) B['R_knee_08'].rotation.x = B['R_knee_08'].userData.bx + Math.max(0, s)*amp*1.1;
   if (B['L_arm_015'] && K.atkT < 0) B['L_arm_015'].rotation.x = B['L_arm_015'].userData.bx - s*amp*0.7;
   if (B['R_arm_039'] && K.atkT < 0) B['R_arm_039'].rotation.x = B['R_arm_039'].userData.bx + s*amp*0.4;
+  // sword tracks the forearm (shoulder->arm axis, extended past the hand)
+  if (K.blade && B['R_shoulder_038'] && K.armR) {
+    if (!K._qa) { K._qa = new THREE.Quaternion(); K._qb = new THREE.Quaternion(); K._vd = new THREE.Vector3(); K._vp = new THREE.Vector3(); K._vy = new THREE.Vector3(0, 1, 0); }
+    B['R_shoulder_038'].getWorldPosition(K._v1);
+    K.armR.getWorldPosition(K._v2);
+    K._vd.copy(K._v2).sub(K._v1);
+    var armLen = Math.max(K._vd.length(), 0.001);
+    K._vd.normalize();
+    K._vp.copy(K._v2).addScaledVector(K._vd, armLen*0.5 + 0.55);  // blade center, world
+    K.root.worldToLocal(K._vp);
+    K.blade.position.copy(K._vp);
+    K.root.getWorldQuaternion(K._qa).invert();
+    K._qb.setFromUnitVectors(K._vy, K._vd);
+    K.blade.quaternion.copy(K._qa).multiply(K._qb);
+  }
   // landing dip + turn bank live on the hips
   K.landDip = Math.max(0, (K.landDip || 0) - dt*3);
   var targetLean = spd * 0.1 + (K.landDip * 0.35);

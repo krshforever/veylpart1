@@ -286,7 +286,18 @@ function loop(){
 
   var talking = V.isBusy() ? nearestNPC() : null;
   npcs.forEach(function(n){
-    if (n.mixer) n.mixer.update(dt);                              // rigged idle
+    if (n.mixer) {
+      n.mixer.update(dt);                                         // rigged idle
+      // kill root-motion: some clips translate the hips (underground dancing).
+      // lock the hips joint to its base position every frame, keep limb motion.
+      if (!n.hipsLocked && n.model) {
+        n.model.traverse(function(o){
+          if (!n.hips && /hip/i.test(o.name || '') && !/control|pole|goal/i.test(o.name || '')) n.hips = o;
+        });
+        if (n.hips) { n.hipsBase = n.hips.position.clone(); n.hipsLocked = true; }
+      }
+      if (n.hips && n.hipsBase) n.hips.position.copy(n.hipsBase);
+    }
     else n.obj.position.y = n.baseY + Math.sin(t*1.4 + n.seed)*0.05; // fallback breath
     if (talking === n) {                                          // speaking gesture
       var b = 1 + Math.sin(t*9)*0.015;
