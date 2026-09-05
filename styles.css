@@ -31,6 +31,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
   background:var(--panel);border-left:3px solid var(--blood);padding:8px 12px;font-size:14px;
   backdrop-filter:blur(6px);border-radius:0 4px 4px 0}
 .obj-tag{display:block;font-size:10px;letter-spacing:.3em;color:var(--ember);margin-bottom:2px}
+#questlog{position:absolute;top:calc(86px + env(safe-area-inset-top));left:12px;max-width:62vw;
+  font-size:12.5px;line-height:1.5}
+#questlog div{background:rgba(12,6,8,.6);border-left:2px solid #5c0a10;padding:3px 9px;margin-top:4px;
+  color:#8a6f52;backdrop-filter:blur(4px)}
+#questlog div.done{color:#5a7a4a;border-color:#5a7a4a;text-decoration:line-through}
+#questlog div.now{color:var(--bone);border-color:var(--gold)}
 #act-banner{position:absolute;top:26%;width:100%;text-align:center;pointer-events:none;
   animation:actfade 4.2s ease forwards}
 #act-title{font-size:clamp(30px,6vw,54px);letter-spacing:.2em;color:var(--blood);

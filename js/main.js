@@ -131,9 +131,46 @@ dlg.addEventListener('click', advanceConvo);
 // ---------- world + Kael ----------
 var K = null, kaelPos = new THREE.Vector3(0, 0, 168);
 var kaelYaw = Math.PI;   // facing north (-z)
+var world = null, colliders = [], bloodMats = [], bloodTex = null, marker = null;
+var rayc = new THREE.Raycaster(), rayDir = new THREE.Vector3(0, -1, 0), rayFrame = 0;
+function makeBloodTexture(){
+  var c = document.createElement('canvas'); c.width = c.height = 128;
+  var x = c.getContext('2d');
+  x.fillStyle = '#ffd9d9'; x.fillRect(0, 0, 128, 128);
+  for (var i = 0; i < 90; i++) {
+    x.strokeStyle = 'rgba(' + (120+Math.random()*120|0) + ',10,16,' + (0.25+Math.random()*0.4) + ')';
+    x.lineWidth = 1 + Math.random()*3;
+    x.beginPath();
+    var sx = Math.random()*128, sy = Math.random()*128;
+    x.moveTo(sx, sy);
+    x.bezierCurveTo(sx+20, sy+10, sx-10, sy+40, sx+15, sy+70);
+    x.stroke();
+  }
+  var t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 6);
+  return t;
+}
 new THREE.GLTFLoader().load('models/veyl_city.glb',
   function(g){
-    scene.add(g.scene);
+    world = g.scene; scene.add(world);
+    // blood water: scrolling flow map
+    bloodTex = makeBloodTexture();
+    world.traverse(function(o){
+      if (o.material && o.material.name === 'blood' && bloodMats.indexOf(o.material) < 0) {
+        o.material.map = bloodTex; o.material.needsUpdate = true; bloodMats.push(o.material);
+      }
+    });
+    // objective beacon
+    marker = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.1, 1.6, 26, 8, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.32,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    scene.add(marker);
+    // colliders
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', 'models/colliders.json', true);
+    xhr.onload = function(){ try { colliders = JSON.parse(xhr.responseText).block || []; } catch(e){} };
+    xhr.send();
     K = window.KAEL.build();
     K.root.position.copy(kaelPos);
     scene.add(K.root);
@@ -165,8 +202,46 @@ function blocked(x, z){
   return false;
 }
 
-// ---------- player state ----------
-var player = { hp: 100, alive: true, attackCD: 0, moveAmt: 0, wantAttack: false };
+// ---------- quest log + marker ----------
+var questEl = document.getElementById('questlog');
+function logStep(text, state){
+  var d = document.createElement('div');
+  if (state) d.className = state;
+  d.textContent = text;
+  questEl.appendChild(d);
+  while (questEl.children.length > 5) questEl.removeChild(questEl.firstChild);
+  var nows = questEl.querySelectorAll('.now');
+  for (var i = 0; i < nows.length - 1; i++) { nows[i].className = 'done'; }
+}
+function setMarker(x, z){
+  if (!marker) return;
+  marker.position.set(x, groundY(x, z) + 13, z);
+  marker.visible = true;
+}
+
+// ---------- player state (real physics) ----------
+var player = { hp: 100, alive: true, attackCD: 0, moveAmt: 0, wantAttack: false,
+               vy: 0, grounded: true, wantJump: false };
+function collide(nx, nz){
+  var r = 0.7;
+  for (var i = 0; i < colliders.length; i++) {
+    var c = colliders[i];
+    var dx = nx - c[0], dz = nz - c[1];
+    if (Math.abs(dx) < c[2]+r && Math.abs(dz) < c[3]+r) return true;
+  }
+  return false;
+}
+function sampleGround(x, z){
+  // raycast real mesh every 4th frame; zone heights as instant fallback
+  rayFrame++;
+  if (world && rayFrame % 4 === 0) {
+    rayc.set(new THREE.Vector3(x, kaelPos.y + 6, z), rayDir);
+    rayc.far = 30;
+    var hits = rayc.intersectObject(world, true);
+    if (hits.length) return hits[0].point.y;
+  }
+  return groundY(x, z);
+}
 function hurt(dmg){
   if (!player.alive) return;
   player.hp -= dmg; setHP(player.hp); window.SFX.hurt();
@@ -187,6 +262,7 @@ window.addEventListener('keydown', function(e){
   keys[e.code] = true;
   if (e.code === 'KeyE') { if (convo) advanceConvo(); else if (window.VEYL_INTERACT) window.VEYL_INTERACT(); }
   if (e.code === 'KeyF') player.wantAttack = true;
+  if (e.code === 'Space') player.wantJump = true;
   if (['ArrowUp','ArrowDown','Space'].indexOf(e.code) >= 0) e.preventDefault();
 });
 window.addEventListener('keyup', function(e){ keys[e.code] = false; });
@@ -222,6 +298,7 @@ document.getElementById('btn-act').addEventListener('click', function(){
   if (convo) advanceConvo(); else if (window.VEYL_INTERACT) window.VEYL_INTERACT();
 });
 document.getElementById('btn-atk').addEventListener('click', function(){ player.wantAttack = true; });
+document.getElementById('btn-jump').addEventListener('click', function(){ player.wantJump = true; });
 
 // ---------- loop ----------
 var started = false, clock = new THREE.Clock();
@@ -255,13 +332,26 @@ function tick(){
       var dz = -Math.cos(yaw)*mvZ - Math.sin(yaw)*mvX;
       var nx = kaelPos.x + dx*sp*dt, nz = kaelPos.z + dz*sp*dt;
       nx = Math.max(-300, Math.min(300, nx)); nz = Math.max(-300, Math.min(330, nz));
-      if (!blocked(nx, nz)) { kaelPos.x = nx; kaelPos.z = nz; }
+      // axis-separated slide: colliders + temple mass
+      if (!blocked(nx, kaelPos.z) && !collide(nx, kaelPos.z)) kaelPos.x = nx;
+      if (!blocked(kaelPos.x, nz) && !collide(kaelPos.x, nz)) kaelPos.z = nz;
       var want = Math.atan2(dx, dz);
       var d = want - kaelYaw;
       while (d > Math.PI) d -= 2*Math.PI; while (d < -Math.PI) d += 2*Math.PI;
       kaelYaw += d * Math.min(1, dt*10);
     }
-    kaelPos.y = groundY(kaelPos.x, kaelPos.z);
+    // gravity + jump + ground
+    var gy = sampleGround(kaelPos.x, kaelPos.z);
+    if (player.wantJump && player.grounded) { player.vy = 8.5; player.grounded = false; }
+    player.wantJump = false;
+    player.vy -= 26*dt;
+    kaelPos.y += player.vy*dt;
+    if (kaelPos.y <= gy) {
+      if (!player.grounded && player.vy < -12) { /* landing thud */ window.SFX.hit(); }
+      kaelPos.y = gy; player.vy = 0; player.grounded = true;
+    } else if (kaelPos.y > gy + 0.05) {
+      player.grounded = false;
+    }
     K.root.position.set(kaelPos.x, kaelPos.y, kaelPos.z);
     K.root.rotation.y = kaelYaw;
     var atk = false;
@@ -281,6 +371,8 @@ function tick(){
     camera.lookAt(tx, ty, tz);
   }
   ember.intensity = 1.0 + Math.sin(performance.now()*0.0021)*0.18;
+  if (bloodTex) { bloodTex.offset.x += dt*0.025; bloodTex.offset.y += dt*0.011; }
+  if (marker && marker.visible) marker.material.opacity = 0.24 + Math.sin(performance.now()*0.004)*0.12;
   renderer.render(scene, camera);
 }
 
@@ -290,7 +382,7 @@ window.VEYL = {
   kael: function(){ return K; }, kaelPos: kaelPos,
   getKaelYaw: function(){ return kaelYaw; },
   groundY: groundY, toast: toast, setObjective: setObjective, showAct: showAct,
-  startConvo: startConvo, hurt: hurt, setHP: setHP,
+  startConvo: startConvo, hurt: hurt, setHP: setHP, logStep: logStep, setMarker: setMarker,
   isBusy: function(){ return !!convo; }
 };
 window.VEYL_ONREADY = null; window.VEYL_INTERACT = null; window.VEYL_SWING = null;

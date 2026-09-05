@@ -1,0 +1,4 @@
+"Strong Knight" by bumstrum — CC BY (Sketchfab uid 9d912e0fedb44b619fbd2a083bbf174f)
+https://sketchfab.com/3d-models/strong-knight-9d912e0fedb44b619fbd2a083bbf174f
+Mobile diet applied locally: 2048->512 textures, spec/normal maps stripped,
+materials converted to metallic-roughness. Originals untouched.

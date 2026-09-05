@@ -93,7 +93,10 @@ window.addEventListener('dragon:begin', function(){
   npcs.push(buildNPC({ id: 'dren', robe: 0x3a2028, trim: 0xd9a441, spear: true, pos: S.npc.dren.pos }));
   npcs.push(buildNPC({ id: 'sella', robe: 0x4a1a2a, trim: 0xff7b14, glowTrim: true, pos: S.npc.sella.pos }));
   npcs.push(buildNPC({ id: 'issa', robe: 0x1a1a22, trim: 0xe8dcc0, staff: true, pos: S.npc.issa.pos }));
-  V.toast('Find Guard Dren — follow the blood runnel north.', 4200);
+  V.logStep('Enter the south gate', 'now');
+  V.logStep('Speak with Guard Dren');
+  V.setMarker(S.markers.dren[0], S.markers.dren[1]);
+  V.toast('Find Guard Dren — follow the gold beacon north.', 4200);
 });
 
 function setAct(i){
@@ -119,11 +122,18 @@ window.VEYL_INTERACT = function(){
 function talkTo(id){
   if (id === 'dren' && !Q.metDren) {
     V.startConvo(S.npc.dren.tree, { onDone: function(){
-      Q.metDren = true; setAct(1); V.toast('Act II — the market feeds the hive.', 3000);
+      Q.metDren = true; setAct(1);
+      V.logStep('Enter the south gate', 'done');
+      V.logStep('Find Sella\'s shop (lantern door)', 'now');
+      V.setMarker(S.markers.sella[0], S.markers.sella[1]);
+      V.toast('Act II — the market feeds the hive.', 3000);
     }});
   } else if (id === 'sella' && !Q.metSella) {
     V.startConvo(S.npc.sella.tree, { onDone: function(){
       Q.metSella = true;
+      V.logStep('Find Sella\'s shop (lantern door)', 'done');
+      V.logStep('Destroy the hive drones (0/3)', 'now');
+      V.setMarker(S.markers.market[0], S.markers.market[1]);
       V.setObjective('Cleanse the hive drones in the market (0/3).');
       [[30,58],[44,72],[36,80]].forEach(function(p){ Q.drones.push(buildDrone(p[0], p[1])); });
       V.toast('They come off the stalls — steel out!', 3000);
@@ -135,6 +145,9 @@ function talkTo(id){
     }
     V.startConvo(S.npc.issa.tree, { onDone: function(){
       Q.metIssa = true; Q.brand = true; setAct(2);
+      V.logStep('Climb to Priest Issa', 'done');
+      V.logStep('Enter the ember veil', 'now');
+      V.setMarker(S.markers.stairs[0], S.markers.stairs[1]);
       window.SFX.choice(); V.toast(S.toasts.brand, 4000);
     }});
   } else {
@@ -201,7 +214,14 @@ function kill(e){
   e.dead = true; window.SFX.hit();
   if (Q.drones.indexOf(e) >= 0) {
     Q.dronesDead++; V.toast(S.toasts.droneDown + ' (' + Q.dronesDead + '/3)');
-    if (Q.dronesDead >= 3) { V.setObjective('Climb to Priest Issa in the court.'); V.toast(S.toasts.marketClear, 3500); }
+    V.setObjective('Cleanse the hive drones in the market (' + Q.dronesDead + '/3).');
+    if (Q.dronesDead >= 3) {
+      V.setObjective('Climb to Priest Issa in the court.');
+      V.logStep('Destroy the hive drones (0/3)', 'done');
+      V.logStep('Climb to Priest Issa', 'now');
+      V.setMarker(S.markers.issa[0], S.markers.issa[1]);
+      V.toast(S.toasts.marketClear, 3500);
+    }
   } else {
     Q.husksDead++; V.toast(S.toasts.huskDown + ' (' + Q.husksDead + '/2)');
   }
@@ -235,6 +255,9 @@ function loop(){
 
   // spawn husks on hall entry
   if (!husksSpawned && kp.z < -12 && Math.abs(kp.x) < 26) {
+    V.logStep('Enter the ember veil', 'done');
+    V.logStep('Face the Bleeding Serpent', 'now');
+    V.setMarker(S.markers.serpent[0], S.markers.serpent[1]);
     husksSpawned = true;
     Q.husks.push(buildHusk(-12, -30)); Q.husks.push(buildHusk(12, -38));
     V.toast('The hall exhales. Husks rise from the pews of bone.', 3500);
