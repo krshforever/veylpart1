@@ -17,10 +17,26 @@ function box(w,h,d,m,x,y,z){
 
 /* ---------- NPCs: real Sketchfab bodies (CC-BY, credited) + role props ---------- */
 var NPC_MODELS = {
-  dren:  { url: 'models/guard/scene.gltf?v=2', h: 1.95 },    // Castle Guard, rigged+anim
-  sella: { url: 'models/peasant/scene.gltf?v=2', h: 1.7, pick: 1 },  // peasant variants
-  issa:  { url: 'models/peasant/scene.gltf?v=2', h: 1.8, pick: 2 }
+  dren:  { url: 'models/guard/scene.gltf?v=2', h: 1.95 },   // Castle Guard, rigged+anim
+  sella: { url: 'models/peasant/scene.gltf?v=2', h: 1.65, pickName: 'peasant woman1' },
+  issa:  { url: 'models/priest/scene.gltf?v=2', h: 1.85 }   // Low Poly Priest, rigged
 };
+/* normalize any model: isolate named variant, feet at origin, target height */
+function fitModel(model, spec){
+  if (spec.pickName) {
+    var keep = null;
+    model.updateMatrixWorld(true);
+    model.traverse(function(o){ if (o.name === spec.pickName) keep = o; });
+    if (keep) { model.clear(); model.add(keep); keep.position.set(0, 0, 0); }
+  }
+  var bb = new THREE.Box3().setFromObject(model);
+  var size = new THREE.Vector3(); bb.getSize(size);
+  var s = spec.h / (size.y || 1);
+  model.scale.setScalar(s);
+  bb.setFromObject(model);
+  model.position.sub(new THREE.Vector3((bb.min.x+bb.max.x)/2, bb.min.y, (bb.min.z+bb.max.z)/2));
+  return model;
+}
 function buildNPC(opts){
   var g = new THREE.Group();
   g.position.set(opts.pos[0], V.groundY(opts.pos[0], opts.pos[2]), opts.pos[2]);
@@ -30,16 +46,18 @@ function buildNPC(opts){
   var spec = NPC_MODELS[opts.id];
   if (spec) {
     new THREE.GLTFLoader().load(spec.url, function(r){
-      var model = r.scene;
-      // normalize: feet on ground, facing +Z, target height
-      var bb = new THREE.Box3().setFromObject(model);
-      var size = new THREE.Vector3(); bb.getSize(size);
-      // peasant pack holds a family: isolate one variant by index
-      if (spec.pick !== undefined) {
-        var kids = model.children.slice();
-        kids.forEach(function(k, i){ if (i !== spec.pick) model.remove(k); });
-        bb.setFromObject(model); bb.getSize(size);
+      var model = fitModel(r.scene, spec);
+      g.add(model);
+      rec.model = model;
+      if (r.animations && r.animations.length) {
+        rec.mixer = new THREE.AnimationMixer(model);
+        rec.mixer.clipAction(r.animations[0]).play();
       }
+      addProps(g, opts, spec.h);
+    }, undefined, function(){ addProps(g, opts, 1.8); });
+  } else addProps(g, opts, 1.8);
+  return rec;
+}
       var s = spec.h / (size.y || 1);
       model.scale.setScalar(s);
       bb.setFromObject(model);
@@ -95,18 +113,26 @@ function buildDrone(x, z){
 
 function buildHusk(x, z){
   var g = new THREE.Group();
-  var ash = mat(0x3a3438), glow = mat(0xff5a14, 0xff5a14);
-  g.add(box(0.7, 1.1, 0.45, ash, 0, 0.9, 0));
-  g.add(box(0.34, 0.38, 0.36, mat(0xcfc0a5), 0, 1.7, 0));
-  g.add(box(0.28, 0.06, 0.04, glow, 0, 1.7, 0.19));
-  g.add(box(0.2, 0.9, 0.24, ash, -0.5, 0.9, 0));
-  g.add(box(0.2, 0.9, 0.24, ash, 0.5, 0.9, 0));
-  g.add(box(0.24, 0.8, 0.3, ash, -0.25, 0.4, 0));
-  g.add(box(0.24, 0.8, 0.3, ash, 0.25, 0.4, 0));
   g.position.set(x, V.groundY(x, z), z);
   V.scene.add(g);
-  return { obj: g, hp: 55, atkCD: 0, seed: Math.random()*10, dead: false,
-           home: new THREE.Vector3(x, 0, z) };
+  var rec = { obj: g, hp: 60, atkCD: 0, seed: Math.random()*10, dead: false,
+              mixer: null, model: null, home: new THREE.Vector3(x, 0, z) };
+  new THREE.GLTFLoader().load('models/cultist/scene.gltf?v=2', function(r){
+    var model = r.scene;
+    model.traverse(function(o){ if (/smg/i.test(o.name || '')) o.visible = false; }); // no guns in Veyl
+    fitModel(model, { h: 1.9 });
+    g.add(model);
+    rec.model = model;
+    // ember eyes on the hood
+    var eL = box(0.09, 0.09, 0.05, mat(0xff5a14, 0xff5a14), -0.14, 1.58, 0.3);
+    var eR = box(0.09, 0.09, 0.05, mat(0xff5a14, 0xff5a14), 0.14, 1.58, 0.3);
+    g.add(eL); g.add(eR);
+    if (r.animations && r.animations.length) {
+      rec.mixer = new THREE.AnimationMixer(model);
+      rec.mixer.clipAction(r.animations[0]).play();
+    }
+  });
+  return rec;
 }
 
 /* ---------- quest state ---------- */
@@ -273,9 +299,21 @@ function loop(){
   if (window.VEYL_PAUSED && window.VEYL_PAUSED()) return;
   var kp = V.kaelPos, t = now/1000;
 
+  var talking = V.isBusy() ? nearestNPC() : null;
   npcs.forEach(function(n){
     if (n.mixer) n.mixer.update(dt);                              // rigged idle
     else n.obj.position.y = n.baseY + Math.sin(t*1.4 + n.seed)*0.05; // fallback breath
+    if (talking === n) {                                          // speaking gesture
+      var b = 1 + Math.sin(t*9)*0.015;
+      n.obj.scale.set(b, 1 + Math.sin(t*9)*0.02, b);
+    } else n.obj.scale.set(1, 1, 1);
+    // body physics: NPCs hold ground, Kael can't walk through them
+    var dx = kp.x - n.obj.position.x, dz = kp.z - n.obj.position.z;
+    var d2 = dx*dx + dz*dz;
+    if (d2 < 1.44 && d2 > 0.0001 && V.player.alive) {
+      var d = Math.sqrt(d2), push = (1.2 - d);
+      V.kaelPos.x += dx/d*push; V.kaelPos.z += dz/d*push;
+    }
     // face Kael when near
     var dx = kp.x - n.obj.position.x, dz = kp.z - n.obj.position.z;
     if (dx*dx + dz*dz < 64) n.obj.rotation.y = Math.atan2(dx, dz);
@@ -313,12 +351,17 @@ function loop(){
       var dx = kp.x - e.obj.position.x, dz = kp.z - e.obj.position.z;
       var dist = Math.hypot(dx, dz);
       var gy = V.groundY(e.obj.position.x, e.obj.position.z);
+      if (e.mixer) e.mixer.update(dt);
       if (dist < 26) {
+        var px = e.obj.position.x;
         e.obj.position.x += dx/dist*cfg.spd*dt;
         e.obj.position.z += dz/dist*cfg.spd*dt;
-        e.obj.rotation.y = Math.atan2(dx, dz);
-        if (cfg.fly) e.obj.position.y = gy + 2.2 + Math.sin(t*3+e.seed)*0.4;
-        else { e.obj.position.y = gy + Math.abs(Math.sin(t*4+e.seed))*0.15; }
+        var wantYaw = Math.atan2(dx, dz), dy = wantYaw - e.obj.rotation.y;
+        while (dy > Math.PI) dy -= 2*Math.PI; while (dy < -Math.PI) dy += 2*Math.PI;
+        e.obj.rotation.y += dy * Math.min(1, dt*6);
+        e.obj.rotation.z += ((-(e.obj.position.x - px)/Math.max(dt, 0.001))*0.06 - e.obj.rotation.z) * Math.min(1, dt*5); // bank
+        if (cfg.fly) e.obj.position.y = gy + 2.2 + Math.sin(t*3+e.seed)*0.4 - Math.min(1, dist/10)*0.8; // swoop low near prey
+        else { e.obj.position.y = gy + Math.abs(Math.sin(t*5+e.seed))*0.22; }
         e.atkCD -= dt;
         if (dist < cfg.rng && e.atkCD <= 0 && V.player.alive && !V.isBusy()) {
           e.atkCD = 1.6; V.hurt(cfg.dmg); shake = 0.35;

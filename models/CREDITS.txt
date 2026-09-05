@@ -5,3 +5,6 @@ materials converted to metallic-roughness. Originals untouched.
 "Castle Guard (Animated and Rigged)" by pooiloui2 — CC BY (uid 265fe550e8364fee8996022c72ae072d)
 "Peasant Family #2 lowpoly character" by RachelleEte — CC BY (uid ccf3af01b8744f59b352dfb74af97212)
 Mobile diet applied locally: textures resized, spec/normal maps stripped.
+"Low Poly Priest (Rigged)" by Yanez-Designs — CC BY (uid a8900861df984faebabfb0e0d5ff59eb)
+"cultist" by bumstrum — CC BY (uid 60f6f26ac2054b09a0b4757fbc771d18)
+Mobile diet applied locally: textures resized, normal maps stripped.
