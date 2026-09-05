@@ -381,7 +381,7 @@ function tick(){
     player.vy -= 26*dt;
     kaelPos.y += player.vy*dt;
     if (kaelPos.y <= gy) {
-      if (!player.grounded && player.vy < -12) { /* landing thud */ window.SFX.hit(); }
+      if (!player.grounded && player.vy < -12) { window.SFX.hit(); if (K) K.landDip = 1; }
       kaelPos.y = gy; player.vy = 0; player.grounded = true;
     } else if (kaelPos.y > gy + 0.05) {
       player.grounded = false;
@@ -395,7 +395,7 @@ function tick(){
     }
     player.wantAttack = false;
     player.attackCD = Math.max(0, player.attackCD - dt);
-    window.KAEL.animate(K, amt, dt, atk);
+    window.KAEL.animate(K, amt, dt, atk, !player.grounded);
     // follow camera
     var tx = kaelPos.x, ty = kaelPos.y + 2.6, tz = kaelPos.z;
     var cx = tx + Math.sin(yaw)*Math.cos(pitch)*CAMD;

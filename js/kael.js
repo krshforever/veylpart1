@@ -65,6 +65,17 @@ function buildKnight(){
         K.armR.add(blade);
         K.blade = blade;
       }
+      // buckler on left forearm
+      var armL = K.bones['L_arm_015'];
+      if (armL) {
+        var buck = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.1, 10),
+          new THREE.MeshLambertMaterial({ color: 0x3a3a44, emissive: 0x1a0d05 }));
+        buck.rotation.z = Math.PI/2; buck.position.set(0, -0.7, 0.15);
+        armL.add(buck);
+        var boss = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5),
+          new THREE.MeshLambertMaterial({ color: 0xd9a441, emissive: 0x442200 }));
+        boss.position.set(0.12, -0.7, 0.15); armL.add(boss);
+      }
       K.ready = true;
     },
     undefined,
@@ -76,38 +87,54 @@ function buildKnight(){
   return K;
 }
 
-function animate(K, moveAmt, dt, attacking){
+function animate(K, moveAmt, dt, attacking, airborne){
   if (K.mixer) K.mixer.update(dt);
-  if (attacking && K.atkT < 0) { K.atkT = 0; window.SFX && window.SFX.swing(); }
+  if (attacking && K.atkT < 0) { K.atkT = 0; K.combo = (K.combo + 1) % 2; window.SFX && window.SFX.swing(); }
   var B = K.bones || {}, sw = 0;
   if (K.atkT >= 0) {
+    // combo: 0 = overhead cleave, 1 = backhand sweep (lunge built in)
     K.atkT += dt;
+    var alt = (K.combo === 1);
     var t = Math.min(K.atkT / 0.5, 1);
     sw = Math.sin(t*Math.PI);
-    if (B['R_arm_039']) B['R_arm_039'].rotation.x = B['R_arm_039'].userData.bx - 2.4*sw;
-    if (B['R_shoulder_038']) B['R_shoulder_038'].rotation.z = B['R_shoulder_038'].userData.bz + 0.5*sw;
-    if (B['spine_012']) B['spine_012'].rotation.y = -0.55*sw;
+    if (B['R_arm_039']) B['R_arm_039'].rotation.x = B['R_arm_039'].userData.bx - (alt ? 1.4 : 2.4)*sw;
+    if (B['R_shoulder_038']) {
+      B['R_shoulder_038'].rotation.z = B['R_shoulder_038'].userData.bz + (alt ? -0.9 : 0.5)*sw;
+      B['R_shoulder_038'].rotation.y = alt ? -0.8*sw : 0;
+    }
+    if (B['spine_012']) {
+      B['spine_012'].rotation.y = (alt ? 0.7 : -0.55)*sw;
+      B['spine_012'].rotation.x = 0.25*sw;
+    }
+    if (B['L_arm_015']) B['L_arm_015'].rotation.x = B['L_arm_015'].userData.bx - 0.9*sw; // buckler brace
     if (t >= 1) {
       if (B['R_arm_039']) B['R_arm_039'].rotation.x = B['R_arm_039'].userData.bx;
-      if (B['R_shoulder_038']) B['R_shoulder_038'].rotation.z = B['R_shoulder_038'].userData.bz;
-      if (B['spine_012']) B['spine_012'].rotation.y = 0;
+      if (B['R_shoulder_038']) { B['R_shoulder_038'].rotation.z = B['R_shoulder_038'].userData.bz; B['R_shoulder_038'].rotation.y = 0; }
+      if (B['spine_012']) { B['spine_012'].rotation.y = 0; B['spine_012'].rotation.x = 0; }
       K.atkT = -1; sw = 0;
     }
   }
-  // procedural walk cycle over the idle (legs, knees, off-arm swing)
-  K.phase += dt * (2 + moveAmt*9);
-  var s = Math.sin(K.phase), amp = moveAmt * 0.6;
+  // walk: stride matched to speed (less ice-skating), softer when airborne
+  var spd = airborne ? 0 : moveAmt;
+  K.phase += dt * (2 + spd*11);
+  var s = Math.sin(K.phase), amp = spd * 0.62;
   if (B['L_leg_02']) B['L_leg_02'].rotation.x = B['L_leg_02'].userData.bx + s*amp;
   if (B['R_leg_07']) B['R_leg_07'].rotation.x = B['R_leg_07'].userData.bx - s*amp;
-  if (B['L_knee_03']) B['L_knee_03'].rotation.x = B['L_knee_03'].userData.bx + Math.max(0, -s)*amp*0.9;
-  if (B['R_knee_08']) B['R_knee_08'].rotation.x = B['R_knee_08'].userData.bx + Math.max(0, s)*amp*0.9;
+  if (B['L_knee_03']) B['L_knee_03'].rotation.x = B['L_knee_03'].userData.bx + Math.max(0, -s)*amp*1.1;
+  if (B['R_knee_08']) B['R_knee_08'].rotation.x = B['R_knee_08'].userData.bx + Math.max(0, s)*amp*1.1;
   if (B['L_arm_015'] && K.atkT < 0) B['L_arm_015'].rotation.x = B['L_arm_015'].userData.bx - s*amp*0.7;
   if (B['R_arm_039'] && K.atkT < 0) B['R_arm_039'].rotation.x = B['R_arm_039'].userData.bx + s*amp*0.4;
-  if (B['spine_012'] && K.atkT < 0) B['spine_012'].rotation.x = moveAmt*0.1;
-  if (B['hips_01']) B['hips_01'].rotation.y = s*amp*0.12;
-  var targetLean = moveAmt * 0.1;
+  // landing dip + turn bank live on the hips
+  K.landDip = Math.max(0, (K.landDip || 0) - dt*3);
+  var targetLean = spd * 0.1 + (K.landDip * 0.35);
   K.root.rotation.x += (targetLean - K.root.rotation.x) * Math.min(1, dt*6);
-  K.root.position.y += Math.abs(Math.cos(K.phase)) * 0.09 * moveAmt;
+  K.root.position.y += Math.abs(Math.cos(K.phase)) * 0.07 * spd - K.landDip * 0.25;
+  if (B['hips_01']) {
+    B['hips_01'].rotation.y = s*amp*0.12;
+    B['hips_01'].position.y = B['hips_01'].userData.by !== undefined ? B['hips_01'].userData.by : (B['hips_01'].userData.by = B['hips_01'].position.y);
+    B['hips_01'].position.y = B['hips_01'].userData.by - K.landDip * 0.3;
+  }
+  if (B['spine_012'] && K.atkT < 0) B['spine_012'].rotation.x = spd*0.08;
 }
 
 window.KAEL = { build: buildKnight, animate: animate };
