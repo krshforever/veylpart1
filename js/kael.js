@@ -26,10 +26,10 @@ function buildKnight(){
   var K = { root: new THREE.Group(), ready: false, mixer: null,
             armR: null, phase: 0, atkT: -1, fallback: false };
   K.root.add(buildCapsule());   // instant body, swapped when knight lands
-  var errBox = document.getElementById('err');
+  var errBox = document.getElementById('err'), errText = document.getElementById('err-text');
   function failWhy(m){
     K.failMsg = m;
-    if (errBox) { errBox.style.display = 'block'; errBox.textContent += '\nKNIGHT: ' + m; }
+    if (errBox) { errBox.style.display='block'; (errText || errBox).textContent += '\nKNIGHT: ' + m; }
   }
   new THREE.GLTFLoader().load('models/knight/scene.gltf?v=3',
     function(g){

@@ -20,7 +20,7 @@
     <div id="loadmsg">loading…</div>
   </div>
 </div>
-<div id="err"></div>
+<div id="err"><button id="err-copy">⧉ COPY</button><span id="err-text"></span></div>
 
 <!-- HUD -->
 <div id="hud" class="hidden">
@@ -54,8 +54,22 @@
 <script>
 /* boot owner: instant response, game talks via CustomEvents */
 (function(){
-  var err = document.getElementById('err'), msg = document.getElementById('loadmsg');
-  function show(t){ err.style.display='block'; err.textContent += '\n'+t; }
+  var err = document.getElementById('err'), errText = document.getElementById('err-text'),
+      msg = document.getElementById('loadmsg');
+  function show(t){ err.style.display='block'; errText.textContent += '\n'+t; }
+  document.getElementById('err-copy').addEventListener('click', function(ev){
+    ev.stopPropagation();
+    var t = errText.textContent || '(no errors)';
+    function done(ok){ this.textContent = ok ? '✓ COPIED' : '✗ FAILED'; var b=this; setTimeout(function(){ b.textContent='⧉ COPY'; },1500); }
+    var b = this;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function(){ done.call(b,true); }, function(){ done.call(b,false); });
+    } else {
+      var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta);
+      ta.select(); try { document.execCommand('copy'); done.call(b,true); } catch(e){ done.call(b,false); }
+      document.body.removeChild(ta);
+    }
+  });
   window.addEventListener('error', function(e){ show('ERR: '+(e.message||'unknown')); });
   window.addEventListener('unhandledrejection', function(e){ show('REJECT: '+String(e.reason).slice(0,300)); });
   window.addEventListener('dragon:progress', function(e){ msg.textContent = e.detail; });
