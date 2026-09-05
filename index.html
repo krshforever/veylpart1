@@ -70,16 +70,44 @@
   function show(t){ err.style.display='block'; errText.textContent += '\n'+t; }
   document.getElementById('err-copy').addEventListener('click', function(ev){
     ev.stopPropagation();
-    var t = errText.textContent || '(no errors)';
-    function done(ok){ this.textContent = ok ? '✓ COPIED' : '✗ FAILED'; var b=this; setTimeout(function(){ b.textContent='⧉ COPY'; },1500); }
     var b = this;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(t).then(function(){ done.call(b,true); }, function(){ done.call(b,false); });
-    } else {
-      var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta);
-      ta.select(); try { document.execCommand('copy'); done.call(b,true); } catch(e){ done.call(b,false); }
-      document.body.removeChild(ta);
+    var t = (errText.textContent || '').trim() || '(no errors shown)';
+    function done(ok, label){
+      b.textContent = ok ? '✓ COPIED' : (label || '✗ FAILED');
+      setTimeout(function(){ b.textContent='⧉ COPY'; }, ok ? 1500 : 4000);
     }
+    function legacy(){
+      var ta = document.createElement('textarea');
+      ta.value = t; ta.readOnly = true;
+      ta.style.position = 'fixed'; ta.style.top = '0'; ta.style.left = '0';
+      ta.style.width = '2em'; ta.style.height = '2em'; ta.style.opacity = '0';
+      ta.style.zIndex = '9999';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try { ta.setSelectionRange(0, ta.value.length); } catch(e){}
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch(e){}
+      document.body.removeChild(ta);
+      return ok;
+    }
+    function selectAll(){  // last resort: highlight text for manual long-press copy
+      try {
+        var r = document.createRange(); r.selectNodeContents(errText);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        return true;
+      } catch(e){ return false; }
+    }
+    var ok = false;
+    function tryLegacy(){
+      ok = legacy();
+      if (ok) done(true);
+      else if (selectAll()) done(false, 'LONG-PRESS ↑');
+      else done(false);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function(){ done(true); }, tryLegacy);
+    } else tryLegacy();
   });
   window.addEventListener('error', function(e){ show('ERR: '+(e.message||'unknown')); });
   window.addEventListener('unhandledrejection', function(e){ show('REJECT: '+String(e.reason).slice(0,300)); });
