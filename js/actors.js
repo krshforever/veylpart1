@@ -17,9 +17,9 @@ function box(w,h,d,m,x,y,z){
 
 /* ---------- NPCs: real Sketchfab bodies (CC-BY, credited) + role props ---------- */
 var NPC_MODELS = {
-  dren:  { url: 'models/guard/scene.gltf?v=3', h: 1.95 },   // Castle Guard, rigged+anim
-  sella: { url: 'models/peasant/scene.gltf?v=3', h: 1.65, pickName: 'peasant woman1' },
-  issa:  { url: 'models/priest/scene.gltf?v=3', h: 1.85 }   // Low Poly Priest, rigged
+  dren:  { url: 'models/guard/scene.gltf?v=4', h: 1.95 },   // Castle Guard, rigged+anim
+  sella: { url: 'models/peasant/scene.gltf?v=4', h: 1.65, pickName: 'peasant woman1' },
+  issa:  { url: 'models/priest/scene.gltf?v=4', h: 1.85 }   // Low Poly Priest, rigged
 };
 /* normalize any model: isolate named variant, feet at origin, target height */
 function fitModel(model, spec){
@@ -105,7 +105,7 @@ function buildHusk(x, z){
   V.scene.add(g);
   var rec = { obj: g, hp: 60, atkCD: 0, seed: Math.random()*10, dead: false,
               mixer: null, model: null, home: new THREE.Vector3(x, 0, z) };
-  new THREE.GLTFLoader().load('models/cultist/scene.gltf?v=3', function(r){
+  new THREE.GLTFLoader().load('models/cultist/scene.gltf?v=4', function(r){
     var model = r.scene;
     model.traverse(function(o){ if (/smg/i.test(o.name || '')) o.visible = false; }); // no guns in Veyl
     fitModel(model, { h: 1.9 });

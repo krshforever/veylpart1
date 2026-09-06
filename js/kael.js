@@ -31,7 +31,7 @@ function buildKnight(){
     K.failMsg = m;
     if (errBox) { errBox.style.display='block'; (errText || errBox).textContent += '\nKNIGHT: ' + m; }
   }
-  new THREE.GLTFLoader().load('models/knight/scene.gltf?v=3',
+  new THREE.GLTFLoader().load('models/knight/scene.gltf?v=4',
     function(g){
       var model = g.scene;
       // normalize: model is ~212 units tall, faces +Z (verified below at runtime)

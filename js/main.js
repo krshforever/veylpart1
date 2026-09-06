@@ -103,8 +103,8 @@ function initAudio(){
   } catch(e){}
   function out(node){ try { node.connect(AudioSys.master || AudioSys.ctx.destination); } catch(e2){ try { node.connect(AudioSys.ctx.destination); } catch(e3){} } }
   AudioSys.out = out;
-  var s1 = document.createElement('source'); s1.src = 'audio/ambience.mp3?v=2'; s1.type = 'audio/mpeg';
-  var s2 = document.createElement('source'); s2.src = 'audio/ambience.ogg?v=2'; s2.type = 'audio/ogg';
+  var s1 = document.createElement('source'); s1.src = 'audio/ambience.mp3?v=3'; s1.type = 'audio/mpeg';
+  var s2 = document.createElement('source'); s2.src = 'audio/ambience.ogg?v=3'; s2.type = 'audio/ogg';
   a.appendChild(s1); a.appendChild(s2);
   var p = a.play(); if (p && p.catch) p.catch(function(){});
 }
@@ -336,7 +336,7 @@ function makeBloodTexture(){
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 6);
   return t;
 }
-new THREE.GLTFLoader().load('models/veyl_city.glb?v=2',
+new THREE.GLTFLoader().load('models/veyl_city.glb?v=3',
   function(g){
     world = g.scene; scene.add(world);
     // solid-only collider set: tex mesh (skip transparent blood/glow/gold)
@@ -370,7 +370,7 @@ new THREE.GLTFLoader().load('models/veyl_city.glb?v=2',
     scene.add(marker);
     // colliders
     var xhr = new XMLHttpRequest();
-    xhr.open('GET', 'models/colliders.json?v=2', true);
+    xhr.open('GET', 'models/colliders.json?v=3', true);
     xhr.onload = function(){ try { colliders = JSON.parse(xhr.responseText).block || []; } catch(e){} };
     xhr.send();
     K = window.KAEL.build();
@@ -737,9 +737,11 @@ var debugOn = /[?&]debug=1/.test(window.location.search);
 var debugEl = document.getElementById('debug');
 if (debugOn) debugEl.classList.remove('hidden');
 var dbgWorst = 0;
+window.VEYL_BUILD = '5e-controls-reckoning';
 function updateDebug(){
   var info = renderer.info.render;
   var lines = [
+    'build ' + window.VEYL_BUILD,
     'fps ' + (perfQ.fps ? perfQ.fps.toFixed(0) : '?') + '  q' + perfQ.level +
     '  calls ' + info.calls + '  tris ' + (info.triangles/1000).toFixed(0) + 'k',
     'kael ' + kaelPos.x.toFixed(1) + ',' + kaelPos.y.toFixed(1) + ',' + kaelPos.z.toFixed(1) +
